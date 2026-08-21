@@ -18,6 +18,14 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 
 export type PublicConfig = {
   supabase: { configured: boolean; url: string | null; anonKey: string | null };
+  ais?: {
+    apiKeyConfigured: boolean;
+    connected: boolean;
+    watchingMmsi: string[];
+    lastMessageAt: number | null;
+    lastIngestAt: number | null;
+    lastError: string | null;
+  };
 };
 
 export const api = {

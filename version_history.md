@@ -1,5 +1,10 @@
 # Version history
 
+## 0.3.2 — 2026-08-21
+
+- AIS ingest: Class B extended reports, broader subscription, status endpoint
+- Kiosk hint when API key missing or no positions yet
+
 ## 0.3.1 — 2026-08-21
 
 - Wider AIS subscription bbox (NY Harbor–Long Island Sound)

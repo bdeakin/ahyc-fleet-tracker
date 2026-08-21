@@ -19,6 +19,8 @@ export function KioskPage() {
   const [live, setLive] = useState(true);
   const [rangeEnd, setRangeEnd] = useState(Date.now());
   const [slider, setSlider] = useState(HOURS * 60); // minutes from start of window
+  const [aisHint, setAisHint] = useState<string | null>(null);
+  const [vesselCount, setVesselCount] = useState(0);
   const windowStart = useMemo(() => rangeEnd - HOURS * 3600_000, [rangeEnd]);
   const scrubTs = windowStart + slider * 60_000;
 
@@ -27,6 +29,29 @@ export function KioskPage() {
       setCharts(c);
       if (c.length && !c.find((x) => x.id === chartId)) setChartId(c[0].id);
     });
+    const refreshAis = () => {
+      api
+        .config()
+        .then((cfg) => {
+          const ais = cfg.ais;
+          if (!ais) return;
+          if (!ais.apiKeyConfigured) {
+            setAisHint("AISStream API key is not set on the server (Railway variable AISSTREAM_API_KEY).");
+          } else if (!ais.connected) {
+            setAisHint(ais.lastError ? `AIS disconnected: ${ais.lastError}` : "Connecting to AISStream…");
+          } else if (!ais.lastIngestAt) {
+            setAisHint(
+              `Listening for ${ais.watchingMmsi.join(", ") || "club vessels"} — no position reports yet (AIS may be out of shore-station range).`,
+            );
+          } else {
+            setAisHint(null);
+          }
+        })
+        .catch(() => undefined);
+    };
+    refreshAis();
+    const id = window.setInterval(refreshAis, 15_000);
+    return () => window.clearInterval(id);
   }, [chartId]);
 
   useEffect(() => {
@@ -116,6 +141,7 @@ export function KioskPage() {
   }, [live, scrubTs, windowStart]);
 
   function drawMarkers(vessels: VesselLiveState[]) {
+    setVesselCount(vessels.length);
     const group = markersRef.current;
     if (!group) return;
     group.clearLayers();
@@ -159,9 +185,10 @@ export function KioskPage() {
       <div ref={mapRef} />
       <div className="timeline">
         <label>
-          <span>{live ? "Live" : "Replay"}</span>
+          <span>{live ? "Live" : "Replay"}{vesselCount ? ` · ${vesselCount} vessel${vesselCount === 1 ? "" : "s"}` : ""}</span>
           <span>{new Date(scrubTs).toLocaleString()}</span>
         </label>
+        {aisHint && <p className="ais-hint">{aisHint}</p>}
         <input
           type="range"
           min={0}
