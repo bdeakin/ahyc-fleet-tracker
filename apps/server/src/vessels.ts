@@ -85,8 +85,16 @@ export function upsertVessel(
 }
 
 export function deleteVessel(db: Db, id: string): boolean {
-  const info = db.prepare("DELETE FROM vessels WHERE id = ?").run(id);
-  return info.changes > 0;
+  const vessel = getVessel(db, id);
+  if (!vessel) return false;
+  const tx = db.transaction(() => {
+    db.prepare("DELETE FROM trips WHERE vessel_id = ?").run(id);
+    db.prepare("DELETE FROM track_points WHERE mmsi = ?").run(vessel.mmsi);
+    db.prepare("DELETE FROM vessel_state WHERE mmsi = ?").run(vessel.mmsi);
+    db.prepare("DELETE FROM vessels WHERE id = ?").run(id);
+  });
+  tx();
+  return true;
 }
 
 export function activeMmsis(db: Db): string[] {

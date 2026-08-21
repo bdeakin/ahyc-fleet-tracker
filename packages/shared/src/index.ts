@@ -99,6 +99,5 @@ export function seasonBounds(year: number, start = "04-01", end = "10-31") {
 
 export function adventureTitle(vesselName: string, seasonYear: number): string {
   const name = vesselName.trim();
-  const labeled = /^(sv|s\/v|m\/v|mv)\b/i.test(name) ? name : `SV ${name}`;
-  return `The ${seasonYear} Adventures of the ${labeled}`;
+  return `The ${seasonYear} Adventures of the ${name}`;
 }

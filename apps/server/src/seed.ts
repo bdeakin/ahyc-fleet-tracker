@@ -1,32 +1,41 @@
-import { randomUUID } from "node:crypto";
 import { getDb } from "./db.js";
 import { ingestPosition } from "./tracks.js";
-import { upsertVessel } from "./vessels.js";
+import { upsertVessel, listVessels, deleteVessel } from "./vessels.js";
 import { config } from "./config.js";
 
-/** Seed demo club vessels and a synthetic 2026 season of day sails for local UI work. */
+/**
+ * Seed the primary club vessel (LIFE AT SEA) and optional synthetic demo tracks
+ * under a separate inactive vessel for UI development without an AIS key.
+ */
 function main() {
   const db = getDb();
-  const nuthatch = upsertVessel(db, {
-    id: "demo-nuthatch",
-    name: "SV Nuthatch",
-    mmsi: "338123456",
-    sailNumber: "USA 42",
+
+  // Remove placeholder demo MMSIs if present from earlier seeds
+  for (const id of ["demo-nuthatch", "demo-shearwater"]) {
+    deleteVessel(db, id);
+  }
+
+  const lifeAtSea = upsertVessel(db, {
+    id: "life-at-sea",
+    name: "LIFE AT SEA",
+    mmsi: "338357109",
     color: "#c45c26",
     active: true,
   });
-  upsertVessel(db, {
-    id: "demo-shearwater",
-    name: "Shearwater",
-    mmsi: "338654321",
-    sailNumber: "NJ 17",
+
+  // Inactive demo vessel — keeps Adventures UI testable offline; never subscribed to AIS
+  const demo = upsertVessel(db, {
+    id: "demo-season-preview",
+    name: "SV Season Preview",
+    mmsi: "000000001",
+    sailNumber: "DEMO",
     color: "#1f6f8b",
-    active: true,
+    active: false,
   });
 
-  db.prepare("DELETE FROM track_points WHERE mmsi = ?").run(nuthatch.mmsi);
-  db.prepare("DELETE FROM vessel_state WHERE mmsi = ?").run(nuthatch.mmsi);
-  db.prepare("DELETE FROM trips WHERE vessel_id = ?").run(nuthatch.id);
+  db.prepare("DELETE FROM track_points WHERE mmsi = ?").run(demo.mmsi);
+  db.prepare("DELETE FROM vessel_state WHERE mmsi = ?").run(demo.mmsi);
+  db.prepare("DELETE FROM trips WHERE vessel_id = ?").run(demo.id);
 
   const year = 2026;
   const tripDays = [
@@ -57,7 +66,7 @@ function main() {
         curve * Math.sin(rad + Math.PI / 2);
       const ts = start + i * 5 * 60_000;
       ingestPosition(db, {
-        mmsi: nuthatch.mmsi,
+        mmsi: demo.mmsi,
         lat,
         lon,
         sog: t === 0 || t === 1 ? 0.2 : 4.5 + Math.sin(t * 6),
@@ -68,19 +77,9 @@ function main() {
     }
   }
 
-  ingestPosition(db, {
-    mmsi: nuthatch.mmsi,
-    lat: config.homeLat + 0.002,
-    lon: config.homeLon - 0.001,
-    sog: 0.1,
-    cog: 0,
-    heading: 45,
-    ts: Date.now(),
-  });
-
-  console.log(`Seeded vessels and ${tripDays.length} synthetic 2026 trips for ${nuthatch.name}`);
-  console.log(`Demo adventure id: ${nuthatch.id} / season ${year}`);
-  console.log(`Unused uuid sample: ${randomUUID()}`);
+  console.log("Club vessels:", listVessels(db).map((v) => `${v.name} (${v.mmsi}) active=${v.active}`));
+  console.log(`Primary track target: ${lifeAtSea.name} MMSI ${lifeAtSea.mmsi} id=${lifeAtSea.id}`);
+  console.log(`Inactive demo adventures: /adventures/${demo.id}/${year}`);
 }
 
 main();

@@ -10,3 +10,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows NOAA nauti
 - AIS via AISStream API, not website scraping
 - Season ≈ April–October; any vessel × any season with data
 - Raspberry Pi capable; Supabase optional for admin/registry
+
+## Known club vessels
+
+- LIFE AT SEA — MMSI 338357109 (sailing vessel)
