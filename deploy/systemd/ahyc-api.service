@@ -1,0 +1,16 @@
+[Unit]
+Description=AHYC Map Kiosk API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ahyc-map-kiosk
+EnvironmentFile=/etc/ahyc-map.env
+ExecStart=/usr/bin/npm run start --workspace=@ahyc/server
+Restart=always
+RestartSec=5
+User=pi
+
+[Install]
+WantedBy=multi-user.target

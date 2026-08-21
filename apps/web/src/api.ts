@@ -1,0 +1,52 @@
+import type { AdventureNarrative, ChartLayer, Vessel, VesselLiveState, TrackPoint } from "@ahyc/shared";
+
+const adminToken = () => localStorage.getItem("ahyc_admin_token") ?? "dev-admin-token";
+
+async function json<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json() as Promise<T>;
+}
+
+export const api = {
+  vessels: () => json<Vessel[]>("/api/vessels"),
+  live: () => json<VesselLiveState[]>("/api/live"),
+  charts: () => json<ChartLayer[]>("/api/charts"),
+  tracks: (from: number, to: number, mmsi?: string) => {
+    const q = new URLSearchParams({ from: String(from), to: String(to) });
+    if (mmsi) q.set("mmsi", mmsi);
+    return json<TrackPoint[]>(`/api/tracks?${q}`);
+  },
+  replay: (at: number) => json<VesselLiveState[]>(`/api/tracks/replay?at=${at}`),
+  seasons: (vesselId: string) =>
+    json<{ vesselId: string; seasons: number[] }>(`/api/adventures/${vesselId}/seasons`),
+  adventure: (vesselId: string, year: number) =>
+    json<AdventureNarrative>(`/api/adventures/${vesselId}/${year}`),
+  saveVessel: (body: Partial<Vessel> & { name: string; mmsi: string }, id?: string) =>
+    json<Vessel>(id ? `/api/vessels/${id}` : "/api/vessels", {
+      method: id ? "PUT" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminToken()}`,
+      },
+      body: JSON.stringify(body),
+    }),
+  deleteVessel: (id: string) =>
+    json<{ ok: boolean }>(`/api/vessels/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminToken()}` },
+    }),
+};
+
+export function liveSocket(onMessage: (data: unknown) => void): WebSocket {
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${window.location.host}/api/ws/live`);
+  ws.onmessage = (ev) => {
+    try {
+      onMessage(JSON.parse(ev.data));
+    } catch {
+      /* ignore */
+    }
+  };
+  return ws;
+}

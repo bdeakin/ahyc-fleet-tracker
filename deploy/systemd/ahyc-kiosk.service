@@ -1,0 +1,15 @@
+[Unit]
+Description=AHYC Chromium Kiosk
+After=ahyc-api.service graphical.target
+Requires=ahyc-api.service
+
+[Service]
+Type=simple
+Environment=AHYC_KIOSK_URL=http://127.0.0.1:8787/
+ExecStart=/opt/ahyc-map-kiosk/deploy/kiosk.sh
+Restart=always
+RestartSec=3
+User=pi
+
+[Install]
+WantedBy=graphical.target

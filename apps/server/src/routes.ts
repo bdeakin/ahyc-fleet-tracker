@@ -1,0 +1,130 @@
+import type { FastifyInstance } from "fastify";
+import { buildAdventure } from "./narrative.js";
+import { listChartLayers, readMbtilesTile } from "./charts.js";
+import { getDb } from "./db.js";
+import { listLiveStates, positionsAt, queryTracks } from "./tracks.js";
+import { availableSeasons } from "./trips.js";
+import {
+  deleteVessel,
+  getVessel,
+  listVessels,
+  upsertVessel,
+} from "./vessels.js";
+import { config } from "./config.js";
+import type { AisIngestWorker } from "./aisWorker.js";
+
+function requireAdmin(header: string | undefined): boolean {
+  if (!header) return false;
+  const token = header.replace(/^Bearer\s+/i, "");
+  return token === config.localAdminToken;
+}
+
+export async function registerRoutes(app: FastifyInstance, ais: AisIngestWorker) {
+  app.get("/api/health", async () => ({ ok: true }));
+
+  app.get("/api/vessels", async () => listVessels(getDb()));
+
+  app.get<{ Params: { id: string } }>("/api/vessels/:id", async (req, reply) => {
+    const vessel = getVessel(getDb(), req.params.id);
+    if (!vessel) return reply.code(404).send({ error: "not_found" });
+    return vessel;
+  });
+
+  app.post<{
+    Body: {
+      name: string;
+      mmsi: string;
+      sailNumber?: string;
+      color?: string;
+      active?: boolean;
+    };
+  }>("/api/vessels", async (req, reply) => {
+    if (!requireAdmin(req.headers.authorization)) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const vessel = upsertVessel(getDb(), req.body);
+    ais.refreshSubscription();
+    return vessel;
+  });
+
+  app.put<{
+    Params: { id: string };
+    Body: {
+      name: string;
+      mmsi: string;
+      sailNumber?: string;
+      color?: string;
+      active?: boolean;
+    };
+  }>("/api/vessels/:id", async (req, reply) => {
+    if (!requireAdmin(req.headers.authorization)) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const vessel = upsertVessel(getDb(), { id: req.params.id, ...req.body });
+    ais.refreshSubscription();
+    return vessel;
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/vessels/:id", async (req, reply) => {
+    if (!requireAdmin(req.headers.authorization)) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const ok = deleteVessel(getDb(), req.params.id);
+    ais.refreshSubscription();
+    return ok ? { ok: true } : reply.code(404).send({ error: "not_found" });
+  });
+
+  app.get("/api/live", async () => listLiveStates(getDb()));
+
+  app.get<{
+    Querystring: { mmsi?: string; from?: string; to?: string };
+  }>("/api/tracks", async (req) => {
+    const to = req.query.to ? Number(req.query.to) : Date.now();
+    const from = req.query.from ? Number(req.query.from) : to - 24 * 3600_000;
+    return queryTracks(getDb(), { mmsi: req.query.mmsi, from, to });
+  });
+
+  app.get<{ Querystring: { at?: string } }>("/api/tracks/replay", async (req) => {
+    const at = req.query.at ? Number(req.query.at) : Date.now();
+    return positionsAt(getDb(), at);
+  });
+
+  app.get("/api/charts", async () => listChartLayers());
+
+  app.get<{
+    Params: { id: string; z: string; x: string; y: string };
+  }>("/api/charts/:id/:z/:x/:y", async (req, reply) => {
+    const layers = listChartLayers();
+    const layer = layers.find((l) => l.id === req.params.id && l.kind === "mbtiles");
+    if (!layer || layer.kind !== "mbtiles") return reply.code(404).send("not found");
+    const z = Number(req.params.z);
+    const x = Number(req.params.x);
+    const y = Number(req.params.y.replace(/\.png$/i, ""));
+    const tile = readMbtilesTile(layer.path, z, x, y);
+    if (!tile) return reply.code(204).send();
+    const isPbf = tile[0] === 0x1f && tile[1] === 0x8b;
+    reply.header("Content-Type", isPbf ? "application/x-protobuf" : "image/png");
+    reply.header("Cache-Control", "public, max-age=86400");
+    return reply.send(tile);
+  });
+
+  app.get<{ Params: { vesselId: string } }>(
+    "/api/adventures/:vesselId/seasons",
+    async (req, reply) => {
+      const vessel = getVessel(getDb(), req.params.vesselId);
+      if (!vessel) return reply.code(404).send({ error: "not_found" });
+      return { vesselId: vessel.id, seasons: availableSeasons(getDb(), vessel.id) };
+    },
+  );
+
+  app.get<{ Params: { vesselId: string; year: string } }>(
+    "/api/adventures/:vesselId/:year",
+    async (req, reply) => {
+      const vessel = getVessel(getDb(), req.params.vesselId);
+      if (!vessel) return reply.code(404).send({ error: "not_found" });
+      const year = Number(req.params.year);
+      if (!Number.isFinite(year)) return reply.code(400).send({ error: "bad_year" });
+      return buildAdventure(getDb(), vessel, year, true);
+    },
+  );
+}
