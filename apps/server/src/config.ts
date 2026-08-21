@@ -1,0 +1,36 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+dotenv.config({ path: path.join(root, ".env") });
+
+function num(name: string, fallback: number): number {
+  const v = process.env[name];
+  if (v === undefined || v === "") return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+export const config = {
+  root,
+  port: num("PORT", 8787),
+  host: process.env.HOST ?? "0.0.0.0",
+  dataDir: path.resolve(root, process.env.DATA_DIR ?? "./data"),
+  aisstreamApiKey: process.env.AISSTREAM_API_KEY ?? "",
+  homeLat: num("HOME_LAT", 40.4185),
+  homeLon: num("HOME_LON", -74.0385),
+  homeRadiusNm: num("HOME_RADIUS_NM", 0.4),
+  seasonStart: process.env.SEASON_START ?? "04-01",
+  seasonEnd: process.env.SEASON_END ?? "10-31",
+  retentionKeepOffseason: (process.env.RETENTION_KEEP_OFFSEASON ?? "true") === "true",
+  supabaseUrl: process.env.SUPABASE_URL ?? "",
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  localAdminToken: process.env.LOCAL_ADMIN_TOKEN ?? "dev-admin-token",
+};
+
+export const paths = {
+  db: path.join(config.dataDir, "db", "ahyc.sqlite"),
+  charts: path.join(config.dataDir, "charts"),
+};

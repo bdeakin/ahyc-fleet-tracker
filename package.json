@@ -1,0 +1,21 @@
+{
+  "name": "ahyc-map-kiosk",
+  "private": true,
+  "version": "0.3.1",
+  "description": "Atlantic Highlands Yacht Club sailing grounds map kiosk with AIS tracks and seasonal adventures",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@ahyc/server & npm run dev --workspace=@ahyc/web",
+    "dev:web": "npm run dev --workspace=@ahyc/web",
+    "dev:server": "npm run dev --workspace=@ahyc/server",
+    "build": "npm run build --workspace=@ahyc/shared && npm run build --workspace=@ahyc/server && npm run build --workspace=@ahyc/web",
+    "start": "npm run start --workspace=@ahyc/server",
+    "seed": "npm run seed --workspace=@ahyc/server"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
