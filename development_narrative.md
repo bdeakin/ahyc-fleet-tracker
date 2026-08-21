@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-08-21 — AISStream key + wider subscription bbox
+
+Configured local `.env` with an AISStream API key (gitignored). Expanded `DEFAULT_BBOX` to cover NY Harbor through Long Island Sound so club vessels remain visible when cruising away from Sandy Hook.
+
 ## 2026-08-21 — Railway phone deploy
 
 Added Docker + Railway config so the same app can be deployed from a phone browser without a Pi. Documented in `deploy/CLOUD.md`: AISStream required, Supabase optional, volume at `/data` for SQLite. First boot bootstraps LIFE AT SEA when the registry is empty.

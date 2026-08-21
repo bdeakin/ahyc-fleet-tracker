@@ -78,12 +78,12 @@ export type ChartLayer =
 
 export const AHYC_CENTER = { lat: 40.4185, lon: -74.0385 } as const;
 
-/** Default AIS / map bbox around Sandy Hook Bay sailing grounds */
+/** AIS subscription bbox: NY Harbor through Long Island Sound (club cruising range) */
 export const DEFAULT_BBOX = {
-  minLat: 40.32,
-  minLon: -74.18,
-  maxLat: 40.55,
-  maxLon: -73.92,
+  minLat: 40.0,
+  minLon: -74.5,
+  maxLat: 41.5,
+  maxLon: -71.8,
 } as const;
 
 export const NOAA_CHART_WMS =

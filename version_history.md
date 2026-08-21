@@ -1,5 +1,10 @@
 # Version history
 
+## 0.3.1 — 2026-08-21
+
+- Wider AIS subscription bbox (NY Harbor–Long Island Sound)
+- First-boot / local AISStream wiring notes
+
 ## 0.3.0 — 2026-08-21
 
 - Dockerfile + `.dockerignore` for container builds
