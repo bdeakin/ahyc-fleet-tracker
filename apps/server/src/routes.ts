@@ -22,8 +22,18 @@ import {
 export async function registerRoutes(app: FastifyInstance, ais: AisIngestWorker) {
   app.get("/api/health", async () => ({ ok: true }));
 
+  app.get("/api/ais/status", async () => ais.getStatus());
+
   app.get("/api/config", async () => ({
     supabase: publicSupabaseConfig(),
+    ais: {
+      apiKeyConfigured: ais.getStatus().apiKeyConfigured,
+      connected: ais.getStatus().connected,
+      watchingMmsi: ais.getStatus().watchingMmsi,
+      lastMessageAt: ais.getStatus().lastMessageAt,
+      lastIngestAt: ais.getStatus().lastIngestAt,
+      lastError: ais.getStatus().lastError,
+    },
   }));
 
   app.post("/api/sync/vessels", async (req, reply) => {

@@ -130,6 +130,14 @@ select {
   accent-color: var(--seafoam);
 }
 
+.ais-hint {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: #f0d9a8;
+  opacity: 0.95;
+}
+
 .chart-select {
   position: absolute;
   z-index: 1000;

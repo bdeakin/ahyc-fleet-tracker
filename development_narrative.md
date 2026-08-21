@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-08-21 — AIS ingest diagnostics on Railway
+
+Production showed LIFE AT SEA registered but `/api/live` empty. VesselFinder also reported the last AIS fix ~19 hours old. Hardened AIS ingest for Class B extended reports, removed narrow message-type filters, and exposed `/api/ais/status` plus a kiosk hint when no positions arrive or the API key is missing.
+
 ## 2026-08-21 — AISStream key + wider subscription bbox
 
 Configured local `.env` with an AISStream API key (gitignored). Expanded `DEFAULT_BBOX` to cover NY Harbor through Long Island Sound so club vessels remain visible when cruising away from Sandy Hook.
