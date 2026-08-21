@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ahyc/shared": "*",
+    "@supabase/supabase-js": "^2.112.3",
     "leaflet": "^1.9.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

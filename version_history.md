@@ -1,5 +1,12 @@
 # Version history
 
+## 0.2.0 — 2026-08-21
+
+- Supabase vessel registry schema (`deploy/supabase/schema.sql`)
+- Server sync pull/push + JWT or local-token admin auth
+- Admin UI Supabase email login + “Sync from Supabase”
+- `/api/config` exposes whether Supabase is configured
+
 ## 0.1.1 — 2026-08-21
 
 - Primary club vessel: **LIFE AT SEA** (MMSI 338357109)

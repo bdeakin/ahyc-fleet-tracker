@@ -10,17 +10,33 @@ import {
   listVessels,
   upsertVessel,
 } from "./vessels.js";
-import { config } from "./config.js";
 import type { AisIngestWorker } from "./aisWorker.js";
-
-function requireAdmin(header: string | undefined): boolean {
-  if (!header) return false;
-  const token = header.replace(/^Bearer\s+/i, "");
-  return token === config.localAdminToken;
-}
+import {
+  deleteVesselFromSupabase,
+  publicSupabaseConfig,
+  pushVesselToSupabase,
+  syncVesselsFromSupabase,
+  verifyAdminAuth,
+} from "./supabase.js";
 
 export async function registerRoutes(app: FastifyInstance, ais: AisIngestWorker) {
   app.get("/api/health", async () => ({ ok: true }));
+
+  app.get("/api/config", async () => ({
+    supabase: publicSupabaseConfig(),
+  }));
+
+  app.post("/api/sync/vessels", async (req, reply) => {
+    const auth = await verifyAdminAuth(req.headers.authorization);
+    if (!auth.ok) return reply.code(401).send({ error: "unauthorized" });
+    try {
+      const result = await syncVesselsFromSupabase();
+      ais.refreshSubscription();
+      return result;
+    } catch (err) {
+      return reply.code(502).send({ error: String(err) });
+    }
+  });
 
   app.get("/api/vessels", async () => listVessels(getDb()));
 
@@ -39,10 +55,14 @@ export async function registerRoutes(app: FastifyInstance, ais: AisIngestWorker)
       active?: boolean;
     };
   }>("/api/vessels", async (req, reply) => {
-    if (!requireAdmin(req.headers.authorization)) {
-      return reply.code(401).send({ error: "unauthorized" });
-    }
+    const auth = await verifyAdminAuth(req.headers.authorization);
+    if (!auth.ok) return reply.code(401).send({ error: "unauthorized" });
     const vessel = upsertVessel(getDb(), req.body);
+    try {
+      await pushVesselToSupabase(vessel);
+    } catch (err) {
+      app.log.warn({ err }, "supabase push after create failed");
+    }
     ais.refreshSubscription();
     return vessel;
   });
@@ -57,21 +77,30 @@ export async function registerRoutes(app: FastifyInstance, ais: AisIngestWorker)
       active?: boolean;
     };
   }>("/api/vessels/:id", async (req, reply) => {
-    if (!requireAdmin(req.headers.authorization)) {
-      return reply.code(401).send({ error: "unauthorized" });
-    }
+    const auth = await verifyAdminAuth(req.headers.authorization);
+    if (!auth.ok) return reply.code(401).send({ error: "unauthorized" });
     const vessel = upsertVessel(getDb(), { id: req.params.id, ...req.body });
+    try {
+      await pushVesselToSupabase(vessel);
+    } catch (err) {
+      app.log.warn({ err }, "supabase push after update failed");
+    }
     ais.refreshSubscription();
     return vessel;
   });
 
   app.delete<{ Params: { id: string } }>("/api/vessels/:id", async (req, reply) => {
-    if (!requireAdmin(req.headers.authorization)) {
-      return reply.code(401).send({ error: "unauthorized" });
-    }
+    const auth = await verifyAdminAuth(req.headers.authorization);
+    if (!auth.ok) return reply.code(401).send({ error: "unauthorized" });
     const ok = deleteVessel(getDb(), req.params.id);
+    if (!ok) return reply.code(404).send({ error: "not_found" });
+    try {
+      await deleteVesselFromSupabase(req.params.id);
+    } catch (err) {
+      app.log.warn({ err }, "supabase delete failed");
+    }
     ais.refreshSubscription();
-    return ok ? { ok: true } : reply.code(404).send({ error: "not_found" });
+    return { ok: true };
   });
 
   app.get("/api/live", async () => listLiveStates(getDb()));

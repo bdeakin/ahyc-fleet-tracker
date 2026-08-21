@@ -36,4 +36,12 @@ Download a regional pack from [NCDS MBTiles Download](https://distribution.chart
 
 ## Raspberry Pi
 
-See `deploy/` for systemd units and Chromium kiosk autostart.
+See [`deploy/README.md`](deploy/README.md) for systemd units, Chromium kiosk autostart, and optional Supabase setup.
+
+## Supabase vessel registry
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. Run [`deploy/supabase/schema.sql`](deploy/supabase/schema.sql) in the SQL editor.
+3. Enable Email auth and create an admin user.
+4. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in `.env`.
+5. Restart the server; open `/admin` and sign in. The Pi syncs vessels into local SQLite for AIS filtering.

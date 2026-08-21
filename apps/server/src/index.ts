@@ -59,3 +59,20 @@ if (fs.existsSync(webDist)) {
 await app.listen({ port: config.port, host: config.host });
 console.log(`[ahyc] listening on http://${config.host}:${config.port}`);
 ais.start();
+
+// Pull club vessel registry from Supabase when configured (survives Pi rebuilds).
+async function pullRegistry() {
+  try {
+    const { syncVesselsFromSupabase, supabaseConfigured } = await import("./supabase.js");
+    if (!supabaseConfigured()) return;
+    const result = await syncVesselsFromSupabase();
+    if (result.synced > 0) {
+      console.log(`[supabase] synced ${result.synced} vessel(s)`);
+      ais.refreshSubscription();
+    }
+  } catch (err) {
+    console.warn("[supabase] sync failed", err);
+  }
+}
+void pullRegistry();
+setInterval(() => void pullRegistry(), 5 * 60_000);
