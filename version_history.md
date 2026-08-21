@@ -1,5 +1,13 @@
 # Version history
 
+## 0.3.0 — 2026-08-21
+
+- Dockerfile + `.dockerignore` for container builds
+- `railway.toml` health check for Railway
+- `deploy/CLOUD.md` phone deploy walkthrough (Supabase optional)
+- Bootstrap LIFE AT SEA on empty database
+- `DATA_DIR=/data` cloud defaults documented
+
 ## 0.2.0 — 2026-08-21
 
 - Supabase vessel registry schema (`deploy/supabase/schema.sql`)

@@ -5,6 +5,7 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import { AisIngestWorker } from "./aisWorker.js";
+import { ensurePrimaryClubVessel } from "./bootstrap.js";
 import { config, paths } from "./config.js";
 import { getDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
@@ -13,6 +14,7 @@ import { listLiveStates } from "./tracks.js";
 fs.mkdirSync(paths.charts, { recursive: true });
 fs.mkdirSync(path.dirname(paths.db), { recursive: true });
 getDb();
+ensurePrimaryClubVessel();
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });

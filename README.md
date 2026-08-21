@@ -5,12 +5,16 @@ Web kiosk for AHYC sailing grounds: NOAA charts, **club vessels only** via AISSt
 ## Stack
 
 - **Frontend:** React + Vite + TypeScript + Leaflet
-- **Backend:** Node.js + Fastify + SQLite (runs on the Raspberry Pi)
+- **Backend:** Node.js + Fastify + SQLite (Raspberry Pi or Railway)
 - **AIS:** [AISStream.io](https://aisstream.io) WebSocket filtered by registered MMSIs
 - **Charts:** NOAA Chart Display Service WMS + optional local MBTiles
 - **Cloud (optional):** Supabase for admin auth / registry sync (local admin token works for v1)
 
-## Quick start
+## Deploy from your phone (Railway)
+
+**Supabase is not required.** Follow **[`deploy/CLOUD.md`](deploy/CLOUD.md)** — Railway + AISStream API key + admin token.
+
+## Quick start (laptop)
 
 ```bash
 cp .env.example .env
@@ -28,7 +32,7 @@ Admin token default: `dev-admin-token` (see `.env`).
 
 ## Adventures
 
-Season = April 1 – October 31. Pick any vessel and any season with data. Title example: **The 2026 Adventures of the SV Nuthatch**. Tracks are segmented into trips and turned into a narrative plus an artistic SVG map (not the operational NOAA chart).
+Season = April 1 – October 31. Pick any vessel and any season with data. Title example: **The 2026 Adventures of the LIFE AT SEA**. Tracks are segmented into trips and turned into a narrative plus an artistic SVG map (not the operational NOAA chart).
 
 ## MBTiles
 
@@ -44,4 +48,4 @@ See [`deploy/README.md`](deploy/README.md) for systemd units, Chromium kiosk aut
 2. Run [`deploy/supabase/schema.sql`](deploy/supabase/schema.sql) in the SQL editor.
 3. Enable Email auth and create an admin user.
 4. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in `.env`.
-5. Restart the server; open `/admin` and sign in. The Pi syncs vessels into local SQLite for AIS filtering.
+5. Restart the server; open `/admin` and sign in. The service syncs vessels into local SQLite for AIS filtering.

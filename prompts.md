@@ -9,7 +9,8 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows NOAA nauti
 - Prefer local responsiveness (MBTiles + SQLite on Pi)
 - AIS via AISStream API, not website scraping
 - Season ≈ April–October; any vessel × any season with data
-- Raspberry Pi capable; Supabase for admin auth + vessel registry sync
+- Raspberry Pi capable; Railway for phone-friendly cloud deploy
+- Supabase optional for admin auth + vessel registry sync
 
 ## Known club vessels
 
