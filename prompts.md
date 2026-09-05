@@ -21,4 +21,6 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows NOAA nauti
 - Dispatcher output: UDP `127.0.0.1:10110`
 - Forwarder: `deploy/ais-forwarder` with `AHYC_INGEST_URL` + `AIS_INGEST_TOKEN`
 - Railway: set matching `AIS_INGEST_TOKEN`; optional `TRAFFIC_RETENTION_HOURS`, `TRACK_MIN_INTERVAL_SEC`
-- Product rules: traffic 24h; registered MMSIs indefinite; click vessel → 24h track
+- Product rules: traffic 24h; registered MMSIs indefinite; live 10m trails; click/search vessel → 24h track + detail pane
+- Markers color-coded by AIS ship type; club vessels keep registry color
+- Kiosk search: type vessel name or MMSI to zoom and inspect

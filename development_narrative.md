@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-09-05 — Ship-type colors, short trails, and vessel search
+
+Harbor traffic was hard to read when every marker shared one gray. Live state now carries ITU AIS ship type (from Dispatcher static messages via the Pi forwarder) and maps it to a fixed palette (sailing, pleasure, tug, cargo, tanker, etc.). Club vessels still use their registry color. The kiosk shows a type legend and draws a 10-minute trail for every vessel by default; selecting a vessel still expands that track to 24 hours. A find-vessel search zooms the map and opens a side pane with MMSI, type, speed, and course.
+
 ## 2026-08-21 — AIS ingest diagnostics on Railway
 
 Production showed LIFE AT SEA registered but `/api/live` empty. VesselFinder also reported the last AIS fix ~19 hours old. Hardened AIS ingest for Class B extended reports, removed narrow message-type filters, and exposed `/api/ais/status` plus a kiosk hint when no positions arrive or the API key is missing.

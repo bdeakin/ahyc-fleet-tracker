@@ -1,4 +1,11 @@
-import { inBbox, TRAFFIC_BBOX, type TrackPoint, type VesselLiveState } from "@ahyc/shared";
+import {
+  colorForShipType,
+  inBbox,
+  labelForShipType,
+  TRAFFIC_BBOX,
+  type TrackPoint,
+  type VesselLiveState,
+} from "@ahyc/shared";
 import { config } from "./config.js";
 import type { Db } from "./db.js";
 import { approxMeters } from "./geo.js";
@@ -9,28 +16,71 @@ const MIN_MOVE_M = 25;
 export type IngestPositionInput = TrackPoint & {
   /** Optional AIS static name for non-registered traffic. */
   name?: string | null;
+  /** ITU-R AIS ship and cargo type (0–99). */
+  shipType?: number | null;
 };
 
-function trafficName(db: Db, mmsi: string): string | undefined {
+type TrafficMeta = { name: string | null; shipType: number | null };
+
+function trafficMeta(db: Db, mmsi: string): TrafficMeta {
   try {
-    const row = db.prepare("SELECT name FROM traffic_names WHERE mmsi = ?").get(mmsi) as
-      | { name: string }
-      | undefined;
-    return row?.name;
+    const row = db
+      .prepare("SELECT name, ship_type AS shipType FROM traffic_names WHERE mmsi = ?")
+      .get(mmsi) as { name: string | null; shipType: number | null } | undefined;
+    return { name: row?.name ?? null, shipType: row?.shipType ?? null };
   } catch {
-    return undefined;
+    return { name: null, shipType: null };
   }
 }
 
-function toLive(db: Db, point: TrackPoint, nameHint?: string | null): VesselLiveState {
+function upsertTrafficMeta(
+  db: Db,
+  mmsi: string,
+  name?: string | null,
+  shipType?: number | null,
+): void {
+  const existing = trafficMeta(db, mmsi);
+  const nextName = name?.trim() ? String(name).slice(0, 64) : existing.name;
+  const nextType =
+    shipType != null && Number.isFinite(shipType) && Number(shipType) > 0
+      ? Math.trunc(Number(shipType))
+      : existing.shipType;
+  if (!nextName && nextType == null) return;
+  try {
+    db.prepare(
+      `INSERT INTO traffic_names (mmsi, name, ship_type, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(mmsi) DO UPDATE SET
+         name = COALESCE(excluded.name, traffic_names.name),
+         ship_type = COALESCE(excluded.ship_type, traffic_names.ship_type),
+         updated_at = excluded.updated_at`,
+    ).run(mmsi, nextName ?? mmsi, nextType, Date.now());
+  } catch {
+    /* migrate may not have run yet in tests */
+  }
+}
+
+function toLive(
+  db: Db,
+  point: TrackPoint,
+  nameHint?: string | null,
+  shipTypeHint?: number | null,
+): VesselLiveState {
   const vessel = getVesselByMmsi(db, point.mmsi);
   const registered = Boolean(vessel?.active);
+  const meta = trafficMeta(db, point.mmsi);
+  const shipType =
+    shipTypeHint != null && Number(shipTypeHint) > 0
+      ? Math.trunc(Number(shipTypeHint))
+      : meta.shipType;
   return {
     mmsi: point.mmsi,
     vesselId: vessel?.id,
-    name: vessel?.name ?? nameHint ?? trafficName(db, point.mmsi),
-    color: vessel?.color,
+    name: vessel?.name ?? nameHint ?? meta.name ?? undefined,
+    color: registered ? vessel?.color : colorForShipType(shipType),
     registered,
+    shipType: shipType ?? null,
+    shipTypeLabel: labelForShipType(shipType),
     lat: point.lat,
     lon: point.lon,
     sog: point.sog,
@@ -107,19 +157,15 @@ export function ingestPosition(
     point.ts,
   );
 
-  if (point.name && !getVesselByMmsi(db, point.mmsi)) {
-    try {
-      db.prepare(
-        `INSERT INTO traffic_names (mmsi, name, updated_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT(mmsi) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`,
-      ).run(point.mmsi, String(point.name).slice(0, 64), Date.now());
-    } catch {
-      /* migrate may not have run yet in tests */
-    }
+  if (!getVesselByMmsi(db, point.mmsi)) {
+    upsertTrafficMeta(db, point.mmsi, point.name, point.shipType);
   }
 
-  return { stored, accepted: true, live: toLive(db, point, point.name) };
+  return {
+    stored,
+    accepted: true,
+    live: toLive(db, point, point.name, point.shipType),
+  };
 }
 
 export function listLiveStates(db: Db): VesselLiveState[] {
