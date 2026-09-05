@@ -186,6 +186,8 @@ export class AishubWorker {
   private lastError: string | null = null;
   private callCount = 0;
   private ingestCount = 0;
+  /** When a watchlist is active, alternate bbox ↔ MMSI on each allowed slot. */
+  private preferMmsiNext = false;
 
   constructor(private broadcast: LiveBroadcaster) {}
 
@@ -216,8 +218,8 @@ export class AishubWorker {
       if (Number.isFinite(n)) this.lastBboxAt = n;
     }
     console.log(
-      `[aishub] enabled user=${config.aishubUsername} bboxEveryHours=${(
-        config.aishubBboxIntervalMs / 3600_000
+      `[aishub] enabled user=${config.aishubUsername} bboxEverySec=${(
+        config.aishubBboxIntervalMs / 1000
       ).toFixed(1)} minIntervalSec=${Math.ceil(
         Math.max(HARD_MIN_INTERVAL_MS, config.aishubMinIntervalMs) / 1000,
       )}`,
@@ -268,11 +270,15 @@ export class AishubWorker {
 
     try {
       this.inFlight = true;
-      // Prefer the daily bbox when due; otherwise spend the 1/min slot on the watchlist.
-      if (bboxDue) {
-        await this.runBboxPull(db);
-      } else if (watch.length > 0) {
+      // One call per slot. Keep full Northeast traffic fresh on the bbox cadence;
+      // when club boats are on the offshore watchlist, alternate MMSI pulls.
+      const runMmsi = watch.length > 0 && (this.preferMmsiNext || !bboxDue);
+      if (runMmsi) {
         await this.runMmsiPull(db, watch);
+        this.preferMmsiNext = false;
+      } else if (bboxDue || watch.length === 0) {
+        await this.runBboxPull(db);
+        this.preferMmsiNext = watch.length > 0;
       }
       this.lastError = null;
     } catch (err) {
@@ -320,15 +326,19 @@ export class AishubWorker {
     const club = new Set(activeMmsis(db));
     const seenClub = new Set<string>();
     let ingested = 0;
+    let clubIngested = 0;
 
+    // Ingest every AISHub fix in the Northeast box (not just club MMSIs).
     for (const v of vessels) {
+      if (!this.ingestVessel(db, v)) continue;
+      ingested += 1;
       if (!isClubMmsi(club, v.mmsi)) continue;
+      clubIngested += 1;
       seenClub.add(club.has(v.mmsi) ? v.mmsi : v.mmsi.padStart(9, "0"));
-      if (this.ingestClub(db, v)) ingested += 1;
-      this.applyWatchRules(db, v);
+      this.applyWatchRules(db, v, club);
     }
 
-    // Last seen near the perimeter but absent from today's bbox → keep MMSI-watching.
+    // Club boat last seen near the perimeter but absent from today's bbox → keep MMSI-watching.
     for (const mmsi of club) {
       if (seenClub.has(mmsi) || seenClub.has(mmsi.padStart(9, "0"))) continue;
       const live = db.prepare("SELECT lat, lon, ts FROM vessel_state WHERE mmsi = ?").get(mmsi) as
@@ -341,7 +351,7 @@ export class AishubWorker {
     }
 
     console.log(
-      `[aishub] bbox vessels=${vessels.length} clubIngested=${ingested} watch=${listWatch(db).length}`,
+      `[aishub] bbox vessels=${vessels.length} ingested=${ingested} club=${clubIngested} watch=${listWatch(db).length}`,
     );
   }
 
@@ -349,11 +359,12 @@ export class AishubWorker {
     // Multiple MMSIs in one request — still a single call against the 1/min budget.
     const vessels = await this.fetchAishub({ mmsi: mmsis.join(",") });
     this.lastMmsiAt = Date.now();
+    const club = new Set(activeMmsis(db));
     let ingested = 0;
 
     for (const v of vessels) {
-      if (this.ingestClub(db, v)) ingested += 1;
-      this.applyWatchRules(db, v);
+      if (this.ingestVessel(db, v)) ingested += 1;
+      this.applyWatchRules(db, v, club);
     }
 
     console.log(
@@ -361,7 +372,9 @@ export class AishubWorker {
     );
   }
 
-  private applyWatchRules(db: Db, v: AishubVessel) {
+  /** Perimeter / return-home watchlist is club vessels only. */
+  private applyWatchRules(db: Db, v: AishubVessel, club: Set<string>) {
+    if (!isClubMmsi(club, v.mmsi)) return;
     const margin = config.aishubPerimeterDeg;
     if (nearOrOutsideBbox(v.lat, v.lon, NORTHEAST_BBOX, margin)) {
       upsertWatch(db, v.mmsi, "perimeter", v.lat, v.lon, v.ts);
@@ -373,7 +386,7 @@ export class AishubWorker {
     }
   }
 
-  private ingestClub(db: Db, v: AishubVessel): boolean {
+  private ingestVessel(db: Db, v: AishubVessel): boolean {
     const { live, accepted } = ingestPosition(db, {
       mmsi: v.mmsi,
       lat: v.lat,
@@ -384,6 +397,7 @@ export class AishubWorker {
       ts: v.ts,
       name: v.name,
       shipType: v.shipType,
+      // Northeast box is larger than the harbor TRAFFIC_BBOX.
       allowOutsideTrafficBbox: true,
     });
     if (!accepted || !live) return false;

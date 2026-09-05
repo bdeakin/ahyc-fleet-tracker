@@ -31,4 +31,4 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 
 - Set `AISHUB_USERNAME` on Railway
 - Daily Northeast bbox for club boats; MMSI watchlist when they approach/leave the perimeter
-- Never call AISHub more than once per minute
+- Poll AISHub every 5 minutes by default (never more than every 5 minutes)

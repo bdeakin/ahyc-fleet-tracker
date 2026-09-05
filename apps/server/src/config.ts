@@ -22,10 +22,10 @@ export const config = {
   aisIngestToken: process.env.AIS_INGEST_TOKEN ?? "",
   /** AISHub username (Railway: AISHUB_USERNAME). Enables daily NE bbox + MMSI watch. */
   aishubUsername: process.env.AISHUB_USERNAME ?? "",
-  /** Min ms between any AISHub HTTP calls (API hard limit: 1/min). */
-  aishubMinIntervalMs: Math.max(60_000, num("AISHUB_MIN_INTERVAL_SEC", 60) * 1000),
-  /** How often to run the Northeast bbox sweep when username is set. */
-  aishubBboxIntervalMs: num("AISHUB_BBOX_INTERVAL_HOURS", 24) * 3600_000,
+  /** Min ms between any AISHub HTTP calls (default 5 min; API hard floor 1/min). */
+  aishubMinIntervalMs: Math.max(60_000, num("AISHUB_MIN_INTERVAL_SEC", 300) * 1000),
+  /** How often to run the Northeast bbox sweep (default 5 min). */
+  aishubBboxIntervalMs: num("AISHUB_BBOX_INTERVAL_SEC", 300) * 1000,
   /** Perimeter band (degrees) inside NORTHEAST_BBOX that starts MMSI watching. */
   aishubPerimeterDeg: num("AISHUB_PERIMETER_DEG", 0.5),
   /** How long to keep non-registered (traffic) track points / live state. */
