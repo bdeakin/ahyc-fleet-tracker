@@ -2,8 +2,9 @@
 """
 Forward AIS Dispatcher UDP NMEA to the AHYC Railway HTTPS ingest API.
 
-AIS Dispatcher (or any source) should send raw NMEA/AIVDM to UDP 127.0.0.1:10110.
-This process decodes positions with pyais, batches them, and POSTs to:
+AIS Dispatcher should send raw NMEA/AIVDM to UDP 127.0.0.1:10110.
+This process assembles multipart sentences, decodes with pyais, batches
+positions (+ cached name/ship type), and POSTs to:
   POST {AHYC_INGEST_URL}/api/ais/ingest
   Authorization: Bearer {AIS_INGEST_TOKEN}
 """
@@ -40,6 +41,9 @@ MAX_BATCH = int(os.environ.get("AIS_MAX_BATCH", "200"))
 _lock = threading.Lock()
 _pending: dict[str, dict[str, Any]] = {}
 _names: dict[str, str] = {}
+_ship_types: dict[str, int] = {}
+# Buffer incomplete multipart AIVDM sentences keyed by (channel, seq_id)
+_fragments: dict[tuple[str, str], list[str]] = {}
 
 
 def _env_ok() -> None:
@@ -49,17 +53,53 @@ def _env_ok() -> None:
         raise SystemExit("AIS_INGEST_TOKEN is required (must match Railway AIS_INGEST_TOKEN)")
 
 
+def _clean_name(value: Any) -> str | None:
+    if value is None:
+        return None
+    name = str(value).replace("@", " ").strip().strip("\x00").strip()
+    if not name:
+        return None
+    return name[:64]
+
+
+def _extract_ship_type(msg: Any) -> int | None:
+    for attr in ("ship_type", "shipType", "shiptype", "type_and_cargo", "type"):
+        raw = getattr(msg, attr, None)
+        if raw is None:
+            continue
+        # Enum-like objects from pyais
+        if hasattr(raw, "value"):
+            try:
+                raw = raw.value
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if 0 < n <= 99:
+            return n
+    return None
+
+
 def _handle_decoded(msg: Any) -> None:
     mmsi = str(getattr(msg, "mmsi", "") or "")
     if not mmsi:
         return
 
-    # Static / voyage data — cache ship name for later position reports.
-    shipname = getattr(msg, "shipname", None) or getattr(msg, "ship_name", None)
-    if shipname:
-        name = str(shipname).strip()
+    name = None
+    for attr in ("shipname", "ship_name", "name", "vessel_name"):
+        name = _clean_name(getattr(msg, attr, None))
         if name:
-            _names[mmsi] = name
+            break
+    if name:
+        _names[mmsi] = name
+        LOG.info("learned name mmsi=%s name=%s", mmsi, name)
+
+    ship_type = _extract_ship_type(msg)
+    if ship_type is not None:
+        _ship_types[mmsi] = ship_type
+        LOG.info("learned shipType mmsi=%s type=%s", mmsi, ship_type)
 
     lat = getattr(msg, "lat", None)
     lon = getattr(msg, "lon", None)
@@ -107,9 +147,68 @@ def _handle_decoded(msg: Any) -> None:
         "heading": heading_n,
         "ts": int(time.time() * 1000),
         "name": _names.get(mmsi),
+        "shipType": _ship_types.get(mmsi),
     }
     with _lock:
         _pending[mmsi] = pos
+
+
+def _parse_fragment_header(sentence: str) -> tuple[int, int, str, str] | None:
+    """Return (frag_count, frag_num, seq_id, channel) for AIVDM/AIVDO, else None."""
+    try:
+        body = sentence.split("*", 1)[0]
+        parts = body.split(",")
+        if len(parts) < 5:
+            return None
+        talker = parts[0]
+        if not talker.endswith("VDM") and not talker.endswith("VDO"):
+            return None
+        frag_count = int(parts[1])
+        frag_num = int(parts[2])
+        seq_id = parts[3] or "0"
+        channel = parts[4] or "A"
+        return frag_count, frag_num, seq_id, channel
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _feed_sentence(sentence: str) -> None:
+    header = _parse_fragment_header(sentence)
+    if header is None:
+        try:
+            _handle_decoded(decode(sentence))
+        except Exception:
+            return
+        return
+
+    frag_count, frag_num, seq_id, channel = header
+    if frag_count <= 1:
+        try:
+            _handle_decoded(decode(sentence))
+        except Exception:
+            return
+        return
+
+    key = (channel, seq_id)
+    bucket = _fragments.setdefault(key, [])
+    # Store by fragment number (1-based)
+    while len(bucket) < frag_count:
+        bucket.append("")
+    if 1 <= frag_num <= frag_count:
+        bucket[frag_num - 1] = sentence
+
+    if all(bucket):
+        parts = list(bucket)
+        _fragments.pop(key, None)
+        try:
+            _handle_decoded(decode(*parts))
+        except Exception:
+            # Fall back to decoding individually (rarely useful for type 5)
+            for part in parts:
+                try:
+                    _handle_decoded(decode(part))
+                except Exception:
+                    continue
 
 
 def _flush_loop() -> None:
@@ -129,7 +228,7 @@ def _flush_loop() -> None:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {INGEST_TOKEN}",
-                "User-Agent": "ahyc-ais-forwarder/1.0",
+                "User-Agent": "ahyc-ais-forwarder/1.1",
             },
         )
         try:
@@ -161,19 +260,14 @@ def main() -> None:
         line = data.decode("utf-8", errors="replace").strip()
         if not line:
             continue
-        # Dispatcher may send one or more sentences per datagram.
         for sentence in line.replace("\r", "\n").split("\n"):
             sentence = sentence.strip()
             if not sentence.startswith("!"):
                 continue
             try:
-                msg = decode(sentence)
-            except Exception:
-                continue
-            try:
-                _handle_decoded(msg)
+                _feed_sentence(sentence)
             except Exception as err:  # noqa: BLE001
-                LOG.debug("decode handle error: %s", err)
+                LOG.debug("sentence error: %s", err)
 
 
 if __name__ == "__main__":

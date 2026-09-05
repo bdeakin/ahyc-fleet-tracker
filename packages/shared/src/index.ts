@@ -26,6 +26,9 @@ export type VesselLiveState = {
   color?: string;
   /** True when MMSI is in the club vessel registry. */
   registered?: boolean;
+  /** ITU-R AIS ship and cargo type code (0–99), when known. */
+  shipType?: number | null;
+  shipTypeLabel?: string;
   lat: number;
   lon: number;
   sog?: number | null;
@@ -124,4 +127,89 @@ export function seasonBounds(year: number, start = "04-01", end = "10-31") {
 export function adventureTitle(vesselName: string, seasonYear: number): string {
   const name = vesselName.trim();
   return `The ${seasonYear} Adventures of the ${name}`;
+}
+
+/** Coarse AIS ship-type buckets for map coloring / labels. */
+export type ShipTypeCategory =
+  | "sailing"
+  | "pleasure"
+  | "fishing"
+  | "tug"
+  | "passenger"
+  | "cargo"
+  | "tanker"
+  | "highSpeed"
+  | "pilotSar"
+  | "military"
+  | "other";
+
+export function shipTypeCategory(code: number | null | undefined): ShipTypeCategory {
+  if (code == null || !Number.isFinite(code) || code <= 0) return "other";
+  const n = Math.trunc(code);
+  if (n === 36) return "sailing";
+  if (n === 37) return "pleasure";
+  if (n === 30) return "fishing";
+  if (n === 31 || n === 32 || n === 52) return "tug";
+  if (n >= 60 && n <= 69) return "passenger";
+  if (n >= 70 && n <= 79) return "cargo";
+  if (n >= 80 && n <= 89) return "tanker";
+  if (n >= 40 && n <= 49) return "highSpeed";
+  if (n === 50 || n === 51 || n === 53 || n === 55) return "pilotSar";
+  if (n === 35) return "military";
+  return "other";
+}
+
+export function labelForShipType(code: number | null | undefined): string {
+  switch (shipTypeCategory(code)) {
+    case "sailing":
+      return "Sailing";
+    case "pleasure":
+      return "Pleasure";
+    case "fishing":
+      return "Fishing";
+    case "tug":
+      return "Tug / tow";
+    case "passenger":
+      return "Passenger";
+    case "cargo":
+      return "Cargo";
+    case "tanker":
+      return "Tanker";
+    case "highSpeed":
+      return "High speed";
+    case "pilotSar":
+      return "Pilot / SAR";
+    case "military":
+      return "Military";
+    default:
+      return "Other / unknown";
+  }
+}
+
+/** Map colors for traffic by AIS type. Club vessels keep their registered color. */
+export function colorForShipType(code: number | null | undefined): string {
+  switch (shipTypeCategory(code)) {
+    case "sailing":
+      return "#0f766e"; // teal
+    case "pleasure":
+      return "#d97706"; // amber
+    case "fishing":
+      return "#65a30d"; // lime/olive
+    case "tug":
+      return "#ea580c"; // orange
+    case "passenger":
+      return "#2563eb"; // blue
+    case "cargo":
+      return "#475569"; // slate
+    case "tanker":
+      return "#b91c1c"; // red
+    case "highSpeed":
+      return "#0891b2"; // cyan
+    case "pilotSar":
+      return "#ca8a04"; // gold
+    case "military":
+      return "#3f6212"; // dark green
+    default:
+      return "#6b7280"; // gray
+  }
 }

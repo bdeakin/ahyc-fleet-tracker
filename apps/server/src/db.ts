@@ -83,7 +83,14 @@ function migrate(database: Db) {
     CREATE TABLE IF NOT EXISTS traffic_names (
       mmsi TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      ship_type INTEGER,
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // Older DBs created traffic_names without ship_type.
+  const cols = database.prepare("PRAGMA table_info(traffic_names)").all() as Array<{ name: string }>;
+  if (cols.length && !cols.some((c) => c.name === "ship_type")) {
+    database.exec("ALTER TABLE traffic_names ADD COLUMN ship_type INTEGER");
+  }
 }

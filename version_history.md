@@ -1,5 +1,12 @@
 # Version history
 
+## 0.5.0 — Ship-type colors + short trails + search
+
+- AIS ship type stored on `traffic_names` and returned on live vessel state with label + marker color.
+- Pi forwarder extracts ship type/name from multipart static AIS and includes `shipType` on ingest.
+- Kiosk markers color-coded by type (legend on map); default 10-minute trails; click still shows 24h.
+- Vessel search by name/MMSI zooms the map and opens a detail side pane.
+
 ## 0.4.0 — AIS Dispatcher harbor ingest
 
 - `POST /api/ais/ingest` accepts batched positions from the Pi (Bearer `AIS_INGEST_TOKEN`).
@@ -7,8 +14,6 @@
 - Non-registered vessels retained 24h; registered club vessels kept indefinitely.
 - Kiosk shows traffic markers; click a vessel for a 24h track polyline.
 - `deploy/ais-forwarder`: Python UDP→HTTPS bridge + systemd unit for AIS Dispatcher.
-
-# Version history
 
 ## 0.3.2 — 2026-08-21
 

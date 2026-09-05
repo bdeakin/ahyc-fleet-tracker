@@ -131,6 +131,7 @@ export async function registerRoutes(
         heading?: number | null;
         ts?: number;
         name?: string | null;
+        shipType?: number | null;
       }>;
     };
   }>("/api/ais/ingest", async (req, reply) => {
@@ -171,6 +172,7 @@ export async function registerRoutes(
             : null,
         ts: raw.ts != null && Number.isFinite(Number(raw.ts)) ? Number(raw.ts) : Date.now(),
         name: raw.name ?? null,
+        shipType: raw.shipType != null && Number.isFinite(Number(raw.shipType)) ? Number(raw.shipType) : null,
       });
       if (!result.accepted || !result.live) {
         rejected += 1;
