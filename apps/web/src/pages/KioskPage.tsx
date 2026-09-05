@@ -17,7 +17,7 @@ const TRACK_HOURS = 24;
 const DEFAULT_TRAIL_MINUTES = 10;
 
 const TYPE_LEGEND: Array<{ color: string; label: string }> = [
-  { color: "#1f6f8b", label: "AHYC club" },
+  { color: "#1f6f8b", label: "AHYC club ★" },
   { color: "#0f766e", label: "Sailing" },
   { color: "#d97706", label: "Pleasure" },
   { color: "#65a30d", label: "Fishing" },
@@ -334,15 +334,18 @@ export function KioskPage() {
     for (const v of vessels) {
       const registered = Boolean(v.registered);
       const color = markerColor(v);
-      const size = registered ? 18 : 12;
+      const size = registered ? 22 : 12;
       const icon = L.divIcon({
         className: registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic",
-        html: `<span style="background:${color}"></span>`,
+        html: registered
+          ? `<span class="vessel-marker-star" aria-hidden="true">★</span><span class="vessel-marker-dot" style="background:${color}"></span>`
+          : `<span class="vessel-marker-dot" style="background:${color}"></span>`,
         iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
       });
       const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: registered ? 500 : 0 });
       const label = v.name ?? v.mmsi;
-      const typeBit = registered ? "club" : (v.shipTypeLabel ?? "traffic");
+      const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
       marker.bindTooltip(
         `${label} (${typeBit})${v.sog != null ? ` · ${v.sog.toFixed(1)} kn` : ""}`,
         { direction: "top", offset: [0, -10] },

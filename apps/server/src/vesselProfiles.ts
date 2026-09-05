@@ -1,4 +1,4 @@
-import type { VesselProfile } from "@ahyc/shared";
+import { shipTypeCodeFromLabel, type VesselProfile } from "@ahyc/shared";
 import type { Db } from "./db.js";
 
 const USER_AGENT = "AHYCFleetTracker/1.0 (+https://github.com/bdeakin/ahyc-fleet-tracker)";
@@ -262,19 +262,22 @@ function saveProfile(
     now,
   );
 
-  if (data?.name) {
+  if (data?.name || data?.vesselType) {
     try {
+      const inferred = shipTypeCodeFromLabel(data.vesselType);
       db.prepare(
         `INSERT INTO traffic_names (mmsi, name, ship_type, updated_at)
-         VALUES (?, ?, NULL, ?)
+         VALUES (?, ?, ?, ?)
          ON CONFLICT(mmsi) DO UPDATE SET
            name = CASE
-             WHEN traffic_names.name IS NULL OR traffic_names.name = traffic_names.mmsi
-               THEN excluded.name
+             WHEN excluded.name IS NOT NULL AND (
+               traffic_names.name IS NULL OR traffic_names.name = traffic_names.mmsi
+             ) THEN excluded.name
              ELSE traffic_names.name
            END,
+           ship_type = COALESCE(traffic_names.ship_type, excluded.ship_type),
            updated_at = excluded.updated_at`,
-      ).run(mmsi, data.name, now);
+      ).run(mmsi, data.name ?? mmsi, inferred, now);
     } catch {
       /* optional enrichment */
     }

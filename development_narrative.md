@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-09-05 — Type colors were all gray; club vessels need stars
+
+Production `/api/live` returned `shipType: null` for every traffic vessel, so every marker used the “other” gray. Two gaps: the Pi forwarder often learned names from Class B static messages without reliably attaching ship type to later positions, and scraped vessel-class text was not used for coloring. Live state now maps scraped class labels to ITU type codes when AIS type is absent, the forwarder stamps learned type onto queued positions (and no longer treats message id as ship type), and AHYC club boats get a gold star behind their pin.
+
 ## 2026-09-05 — MMSI profile scrape with local cache
 
 AIS gives position and type, but the kiosk pane still lacked registry-style particulars (flag, dimensions, call sign). Added a one-time scrape per newly seen MMSI against VesselFinder (MyShipTracking fallback), stored in SQLite `vessel_profiles`. The background worker drains a pending queue politely; successful and not-found results stay cached, errors retry after six hours. Selecting a vessel loads `/api/vessels/profile/:mmsi` and fills the side pane as the scrape completes.
