@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { buildAdventure } from "./narrative.js";
 import { listChartLayers, readMbtilesTile } from "./charts.js";
 import { getDb } from "./db.js";
-import { listLiveStates, positionsAt, queryTracks } from "./tracks.js";
+import { ingestPosition, listLiveStates, positionsAt, pruneTrafficHistory, queryTracks } from "./tracks.js";
+import { config } from "./config.js";
 import { availableSeasons } from "./trips.js";
 import {
   deleteVessel,
@@ -19,7 +20,11 @@ import {
   verifyAdminAuth,
 } from "./supabase.js";
 
-export async function registerRoutes(app: FastifyInstance, ais: AisIngestWorker) {
+export async function registerRoutes(
+  app: FastifyInstance,
+  ais: AisIngestWorker,
+  broadcast: (payload: unknown) => void,
+) {
   app.get("/api/health", async () => ({ ok: true }));
 
   app.get("/api/ais/status", async () => ais.getStatus());
@@ -33,6 +38,7 @@ export async function registerRoutes(app: FastifyInstance, ais: AisIngestWorker)
       lastMessageAt: ais.getStatus().lastMessageAt,
       lastIngestAt: ais.getStatus().lastIngestAt,
       lastError: ais.getStatus().lastError,
+      ingestTokenConfigured: Boolean(config.aisIngestToken),
     },
   }));
 
@@ -111,6 +117,76 @@ export async function registerRoutes(app: FastifyInstance, ais: AisIngestWorker)
     }
     ais.refreshSubscription();
     return { ok: true };
+  });
+
+
+  app.post<{
+    Body: {
+      positions?: Array<{
+        mmsi: string;
+        lat: number;
+        lon: number;
+        sog?: number | null;
+        cog?: number | null;
+        heading?: number | null;
+        ts?: number;
+        name?: string | null;
+      }>;
+    };
+  }>("/api/ais/ingest", async (req, reply) => {
+    const header = req.headers.authorization ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : String(req.headers["x-ais-ingest-token"] ?? "");
+    if (!config.aisIngestToken || token !== config.aisIngestToken) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const positions = Array.isArray(req.body?.positions) ? req.body.positions : [];
+    if (positions.length === 0) {
+      return reply.code(400).send({ error: "positions_required" });
+    }
+    if (positions.length > 500) {
+      return reply.code(413).send({ error: "batch_too_large" });
+    }
+
+    const db = getDb();
+    let accepted = 0;
+    let stored = 0;
+    let rejected = 0;
+    for (const raw of positions) {
+      const mmsi = String(raw.mmsi ?? "").trim();
+      const lat = Number(raw.lat);
+      const lon = Number(raw.lon);
+      if (!mmsi || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+        rejected += 1;
+        continue;
+      }
+      const result = ingestPosition(db, {
+        mmsi,
+        lat,
+        lon,
+        sog: raw.sog != null && Number.isFinite(Number(raw.sog)) ? Number(raw.sog) : null,
+        cog: raw.cog != null && Number.isFinite(Number(raw.cog)) ? Number(raw.cog) : null,
+        heading:
+          raw.heading != null && Number.isFinite(Number(raw.heading)) && Number(raw.heading) !== 511
+            ? Number(raw.heading)
+            : null,
+        ts: raw.ts != null && Number.isFinite(Number(raw.ts)) ? Number(raw.ts) : Date.now(),
+        name: raw.name ?? null,
+      });
+      if (!result.accepted || !result.live) {
+        rejected += 1;
+        continue;
+      }
+      accepted += 1;
+      if (result.stored) stored += 1;
+      broadcast({ type: "vessel", vessel: result.live });
+    }
+    return { ok: true, accepted, stored, rejected };
+  });
+
+  app.post("/api/ais/prune", async (req, reply) => {
+    const auth = await verifyAdminAuth(req.headers.authorization);
+    if (!auth.ok) return reply.code(401).send({ error: "unauthorized" });
+    return pruneTrafficHistory(getDb());
   });
 
   app.get("/api/live", async () => listLiveStates(getDb()));

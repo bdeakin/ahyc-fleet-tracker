@@ -79,5 +79,11 @@ function migrate(database: Db) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS traffic_names (
+      mmsi TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 }

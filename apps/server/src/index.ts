@@ -9,7 +9,7 @@ import { ensurePrimaryClubVessel } from "./bootstrap.js";
 import { config, paths } from "./config.js";
 import { getDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
-import { listLiveStates } from "./tracks.js";
+import { listLiveStates, pruneTrafficHistory } from "./tracks.js";
 
 fs.mkdirSync(paths.charts, { recursive: true });
 fs.mkdirSync(path.dirname(paths.db), { recursive: true });
@@ -41,7 +41,7 @@ app.get("/api/ws/live", { websocket: true }, (socket) => {
   socket.on("close", () => liveClients.delete(socket));
 });
 
-await registerRoutes(app, ais);
+await registerRoutes(app, ais, broadcast);
 
 const webDist = path.resolve(config.root, "apps/web/dist");
 if (fs.existsSync(webDist)) {
@@ -61,6 +61,21 @@ if (fs.existsSync(webDist)) {
 await app.listen({ port: config.port, host: config.host });
 console.log(`[ahyc] listening on http://${config.host}:${config.port}`);
 ais.start();
+
+// Drop non-registered harbor traffic older than TRAFFIC_RETENTION_HOURS (default 24h).
+function runTrafficPrune() {
+  try {
+    const result = pruneTrafficHistory(getDb());
+    if (result.points || result.live) {
+      console.log(`[retention] pruned traffic points=${result.points} live=${result.live}`);
+    }
+  } catch (err) {
+    console.warn("[retention] prune failed", err);
+  }
+}
+runTrafficPrune();
+setInterval(runTrafficPrune, 15 * 60_000);
+
 
 // Pull club vessel registry from Supabase when configured (survives Pi rebuilds).
 async function pullRegistry() {
