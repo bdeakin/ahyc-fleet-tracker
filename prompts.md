@@ -2,7 +2,7 @@
 
 ## Product framing
 
-Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows NOAA nautical charts of local sailing grounds, overlays **registered club vessels only** from public AIS, stores tracks locally for timeline replay, and offers a seasonal Adventures page with narrative prose and a stylized artistic nautical map titled like “The 2026 Adventures of the LIFE AT SEA”.
+Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sailing grounds on a readable chart (simplified ocean depth + place names by default; full NOAA WMS optional), overlays **registered club vessels** and harbor AIS traffic, stores tracks locally for timeline replay, and offers a seasonal Adventures page with narrative prose and a stylized artistic nautical map titled like “The 2026 Adventures of the LIFE AT SEA”.
 
 ## Constraints
 
@@ -22,7 +22,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows NOAA nauti
 - Forwarder: `deploy/ais-forwarder` with `AHYC_INGEST_URL` + `AIS_INGEST_TOKEN`
 - Railway: set matching `AIS_INGEST_TOKEN`; optional `TRAFFIC_RETENTION_HOURS`, `TRACK_MIN_INTERVAL_SEC`
 - Product rules: traffic 24h; registered MMSIs indefinite; live 10m trails; click/search vessel → 24h track + detail pane
-- Markers color-coded by AIS ship type; club vessels keep registry color
+- Markers color-coded by AIS ship type (sailing white, pleasure pink); club vessels keep registry color + star
 - Kiosk search: type vessel name or MMSI to zoom and inspect
 - New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known
-- AHYC club vessels: registry color + star marker; traffic colored by AIS/scraped type
+- Default basemap: Esri Ocean (depth + labels); switcher keeps full NOAA Chart Display WMS

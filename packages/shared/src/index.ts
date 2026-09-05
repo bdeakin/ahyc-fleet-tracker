@@ -103,9 +103,29 @@ export type AdventureNarrative = {
 
 export type ChartLayer =
   | { id: string; kind: "noaa-wms"; label: string }
+  | {
+      id: string;
+      kind: "xyz";
+      label: string;
+      /** One or more XYZ tile URL templates (`{z}/{y}/{x}`). Drawn bottom→top. */
+      urls: string[];
+      attribution: string;
+      maxZoom?: number;
+    }
   | { id: string; kind: "mbtiles"; label: string; path: string };
 
 export const AHYC_CENTER = { lat: 40.4185, lon: -74.0385 } as const;
+
+/** Esri World Ocean Base — bathymetry shading without dense chart notation. */
+export const ESRI_OCEAN_BASE =
+  "https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}";
+
+/** Esri World Ocean Reference — place names / coastal labels (e.g. Raritan Bay). */
+export const ESRI_OCEAN_REFERENCE =
+  "https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}";
+
+export const ESRI_OCEAN_ATTRIBUTION =
+  "Tiles &copy; Esri &mdash; Sources: GEBCO, NOAA, CHS, OSU, UNH, CSUMB, National Geographic, DeLorme, NAVTEQ, and Esri";
 
 /**
  * Harbor traffic / Dispatcher ingest bbox:
@@ -229,9 +249,9 @@ export function labelForShipType(code: number | null | undefined): string {
 export function colorForShipType(code: number | null | undefined): string {
   switch (shipTypeCategory(code)) {
     case "sailing":
-      return "#0f766e"; // teal
+      return "#ffffff"; // white (common AIS app convention)
     case "pleasure":
-      return "#d97706"; // amber
+      return "#ec4899"; // pink
     case "fishing":
       return "#65a30d"; // lime/olive
     case "tug":
@@ -251,6 +271,24 @@ export function colorForShipType(code: number | null | undefined): string {
     default:
       return "#6b7280"; // gray
   }
+}
+
+/** True when a marker fill needs a dark outline (e.g. white sailing vessels). */
+export function markerNeedsDarkOutline(color: string): boolean {
+  const hex = color.trim().replace(/^#/, "");
+  if (hex.length !== 3 && hex.length !== 6) return false;
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  // Perceived luminance (sRGB-ish); white/near-white fills need a dark border.
+  return (0.299 * r + 0.587 * g + 0.114 * b) >= 200;
 }
 
 export function colorForShipTypeLabel(label: string | null | undefined): string {

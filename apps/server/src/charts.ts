@@ -2,6 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ChartLayer } from "@ahyc/shared";
+import {
+  ESRI_OCEAN_ATTRIBUTION,
+  ESRI_OCEAN_BASE,
+  ESRI_OCEAN_REFERENCE,
+} from "@ahyc/shared";
 import { paths } from "./config.js";
 
 export function ensureChartDir() {
@@ -11,7 +16,15 @@ export function ensureChartDir() {
 export function listChartLayers(): ChartLayer[] {
   ensureChartDir();
   const layers: ChartLayer[] = [
-    { id: "noaa-wms", kind: "noaa-wms", label: "NOAA Chart Display (live WMS)" },
+    {
+      id: "ocean-simple",
+      kind: "xyz",
+      label: "Simplified ocean (depth + place names)",
+      urls: [ESRI_OCEAN_BASE, ESRI_OCEAN_REFERENCE],
+      attribution: ESRI_OCEAN_ATTRIBUTION,
+      maxZoom: 16,
+    },
+    { id: "noaa-wms", kind: "noaa-wms", label: "NOAA Chart Display (full WMS)" },
   ];
   for (const file of fs.readdirSync(paths.charts)) {
     if (!file.endsWith(".mbtiles")) continue;

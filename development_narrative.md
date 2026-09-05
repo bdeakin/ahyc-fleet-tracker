@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-09-05 — Simplified chart + sailing white / pleasure pink
+
+The full NOAA Chart Display WMS is accurate but too busy for a clubhouse kiosk — depth contours and regional labels are what people need first. Default basemap is now Esri’s Ocean Base (bathymetry) plus Ocean Reference (place names); operators can still switch to the full NOAA WMS. Sailing vessels are white and pleasure craft pink to match common AIS apps; white markers get a dark outline so they stay visible on pale water tiles.
+
 ## 2026-09-05 — Type colors were all gray; club vessels need stars
 
 Production `/api/live` returned `shipType: null` for every traffic vessel, so every marker used the “other” gray. Two gaps: the Pi forwarder often learned names from Class B static messages without reliably attaching ship type to later positions, and scraped vessel-class text was not used for coloring. Live state now maps scraped class labels to ITU type codes when AIS type is absent, the forwarder stamps learned type onto queued positions (and no longer treats message id as ship type), and AHYC club boats get a gold star behind their pin.

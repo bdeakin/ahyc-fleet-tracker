@@ -4,13 +4,13 @@
 
 - `apps/web` — React UI: kiosk map (`/`), Adventures (`/adventures`), admin registry (`/admin`).
 - `apps/server` — Fastify API, AISStream ingest worker, SQLite persistence, MBTiles tile route, trip detection + narrative builder, optional Supabase sync.
-- `packages/shared` — shared TypeScript types and helpers (AHYC center, NOAA WMS URL, adventure title, AIS ship-type labels/colors).
+- `packages/shared` — shared TypeScript types and helpers (AHYC center, Esri ocean + NOAA WMS URLs, adventure title, AIS ship-type labels/colors).
 - `deploy/` — Pi systemd/kiosk scripts, AIS Dispatcher forwarder, Supabase SQL schema, Railway phone deploy guide.
 - `Dockerfile` + `railway.toml` — container build for Railway (or any Docker host).
 
 ## Deployment targets
 
-- **Railway (phone-friendly):** always-on Node service, volume at `/data` for SQLite, NOAA WMS over the network. See `deploy/CLOUD.md`.
+- **Railway (phone-friendly):** always-on Node service, volume at `/data` for SQLite, chart tiles over the network. See `deploy/CLOUD.md`.
 - **Raspberry Pi kiosk:** same app + Chromium `--kiosk`. See `deploy/README.md`.
 
 ## Data flow
@@ -32,8 +32,10 @@
 
 ## Charts
 
-- Default operational basemap: NOAA Chart Display Service WMS.
+- Default operational basemap: Esri World Ocean Base + Ocean Reference (bathymetry shading and coastal/place labels without dense chart notation).
+- Optional full NOAA Chart Display Service WMS (selectable in the kiosk).
 - Optional offline: MBTiles files in `data/charts`, served as XYZ with TMS→XYZ conversion (Pi).
+- `ChartLayer` kinds: `xyz` (one or more tile URL templates), `noaa-wms`, `mbtiles`.
 
 ## Auth
 

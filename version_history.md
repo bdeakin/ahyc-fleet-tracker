@@ -1,5 +1,11 @@
 # Version history
 
+## 0.7.0 — Simplified ocean basemap + sailing/pleasure colors
+
+- Default kiosk basemap is Esri Ocean Base + Ocean Reference (bathymetry shading and place names like Raritan Bay) instead of the dense full NOAA WMS chart; NOAA full chart remains selectable.
+- Chart catalog supports `xyz` multi-URL layers alongside NOAA WMS and local MBTiles.
+- Sailing vessels render white; pleasure craft pink (AIS-app convention). Light fills use a dark marker/legend outline.
+
 ## 0.6.1 — Vessel type colors + AHYC club stars
 
 - Fixed marker coloring: live state now falls back to scraped vessel-class labels when AIS `shipType` is missing (production had shipType=null for all traffic → all gray).

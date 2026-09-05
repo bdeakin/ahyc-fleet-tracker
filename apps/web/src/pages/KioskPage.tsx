@@ -6,6 +6,7 @@ import {
   AHYC_CENTER,
   NOAA_CHART_WMS,
   colorForShipType,
+  markerNeedsDarkOutline,
   type ChartLayer,
   type VesselLiveState,
   type VesselProfile,
@@ -18,8 +19,8 @@ const DEFAULT_TRAIL_MINUTES = 10;
 
 const TYPE_LEGEND: Array<{ color: string; label: string }> = [
   { color: "#1f6f8b", label: "AHYC club ★" },
-  { color: "#0f766e", label: "Sailing" },
-  { color: "#d97706", label: "Pleasure" },
+  { color: "#ffffff", label: "Sailing" },
+  { color: "#ec4899", label: "Pleasure" },
   { color: "#65a30d", label: "Fishing" },
   { color: "#ea580c", label: "Tug / tow" },
   { color: "#2563eb", label: "Passenger" },
@@ -45,7 +46,7 @@ export function KioskPage() {
   const liveVesselsRef = useRef<VesselLiveState[]>([]);
 
   const [charts, setCharts] = useState<ChartLayer[]>([]);
-  const [chartId, setChartId] = useState("noaa-wms");
+  const [chartId, setChartId] = useState("ocean-simple");
   const [live, setLive] = useState(true);
   const [rangeEnd, setRangeEnd] = useState(Date.now());
   const [slider, setSlider] = useState(HOURS * 60); // minutes from start of window
@@ -134,17 +135,26 @@ export function KioskPage() {
       layerRef.current = null;
     }
     const selected = charts.find((c) => c.id === chartId);
-    if (!selected || selected.kind === "noaa-wms") {
+    if (selected?.kind === "xyz") {
+      const group = L.layerGroup();
+      selected.urls.forEach((url, i) => {
+        L.tileLayer(url, {
+          maxZoom: selected.maxZoom ?? 18,
+          attribution: i === 0 ? selected.attribution : "",
+        }).addTo(group);
+      });
+      layerRef.current = group;
+    } else if (selected?.kind === "mbtiles") {
+      layerRef.current = L.tileLayer(`/api/charts/${selected.id}/{z}/{x}/{y}.png`, {
+        maxZoom: 18,
+        attribution: "NOAA NCDS MBTiles (local)",
+      });
+    } else {
       layerRef.current = L.tileLayer.wms(NOAA_CHART_WMS, {
         layers: "0,1,2,3,4,5,6,7,8,9,10,11,12",
         format: "image/png",
         transparent: true,
         attribution: "NOAA Chart Display Service",
-      });
-    } else {
-      layerRef.current = L.tileLayer(`/api/charts/${selected.id}/{z}/{x}/{y}.png`, {
-        maxZoom: 18,
-        attribution: "NOAA NCDS MBTiles (local)",
       });
     }
     layerRef.current.addTo(map);
@@ -335,11 +345,12 @@ export function KioskPage() {
       const registered = Boolean(v.registered);
       const color = markerColor(v);
       const size = registered ? 22 : 12;
+      const outlineClass = markerNeedsDarkOutline(color) ? " vessel-marker-dot--light" : "";
       const icon = L.divIcon({
         className: registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic",
         html: registered
-          ? `<span class="vessel-marker-star" aria-hidden="true">★</span><span class="vessel-marker-dot" style="background:${color}"></span>`
-          : `<span class="vessel-marker-dot" style="background:${color}"></span>`,
+          ? `<span class="vessel-marker-star" aria-hidden="true">★</span><span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`
+          : `<span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`,
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2],
       });
@@ -359,7 +370,7 @@ export function KioskPage() {
     <div className="kiosk">
       <div className="kiosk-brand">
         <h1>Atlantic Highlands Yacht Club</h1>
-        <p>Local sailing grounds · club & harbor traffic · NOAA charts</p>
+        <p>Local sailing grounds · club & harbor traffic</p>
       </div>
       <div className="kiosk-actions">
         <Link to="/adventures">Season adventures</Link>
@@ -386,7 +397,15 @@ export function KioskPage() {
         <select value={chartId} onChange={(e) => setChartId(e.target.value)} aria-label="Chart layer">
           {(charts.length
             ? charts
-            : [{ id: "noaa-wms", kind: "noaa-wms" as const, label: "NOAA Chart Display (live WMS)" }]
+            : [
+                {
+                  id: "ocean-simple",
+                  kind: "xyz" as const,
+                  label: "Simplified ocean (depth + place names)",
+                  urls: [],
+                  attribution: "",
+                },
+              ]
           ).map((c) => (
             <option key={c.id} value={c.id}>
               {c.label}
@@ -397,7 +416,10 @@ export function KioskPage() {
       <aside className="type-legend" aria-label="Vessel type colors">
         {TYPE_LEGEND.map((item) => (
           <div key={item.label} className="type-legend-row">
-            <span className="type-swatch" style={{ background: item.color }} />
+            <span
+              className={`type-swatch${markerNeedsDarkOutline(item.color) ? " type-swatch--light" : ""}`}
+              style={{ background: item.color }}
+            />
             <span>{item.label}</span>
           </div>
         ))}
@@ -419,7 +441,10 @@ export function KioskPage() {
             {searchMatches.map((v) => (
               <li key={v.mmsi}>
                 <button type="button" onClick={() => focusVessel(v)}>
-                  <span className="type-swatch" style={{ background: markerColor(v) }} />
+                  <span
+                    className={`type-swatch${markerNeedsDarkOutline(markerColor(v)) ? " type-swatch--light" : ""}`}
+                    style={{ background: markerColor(v) }}
+                  />
                   <span className="vessel-search-name">{v.name || v.mmsi}</span>
                   <span className="vessel-search-meta">
                     {v.registered ? "AHYC" : v.shipTypeLabel || "Traffic"}
