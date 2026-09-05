@@ -3,6 +3,11 @@ import { buildAdventure } from "./narrative.js";
 import { listChartLayers, readMbtilesTile } from "./charts.js";
 import { getDb } from "./db.js";
 import { ingestPosition, listLiveStates, positionsAt, pruneTrafficHistory, queryTracks } from "./tracks.js";
+import {
+  getVesselProfile,
+  scrapeAndStoreProfile,
+  ensureVesselProfileQueued,
+} from "./vesselProfiles.js";
 import { config } from "./config.js";
 import { availableSeasons } from "./trips.js";
 import {
@@ -192,6 +197,24 @@ export async function registerRoutes(
   });
 
   app.get("/api/live", async () => listLiveStates(getDb()));
+
+  app.get<{ Params: { mmsi: string } }>("/api/vessels/profile/:mmsi", async (req, reply) => {
+    const mmsi = String(req.params.mmsi ?? "").trim();
+    if (!/^\d{9}$/.test(mmsi)) return reply.code(400).send({ error: "bad_mmsi" });
+    const db = getDb();
+    ensureVesselProfileQueued(db, mmsi);
+    const profile = getVesselProfile(db, mmsi);
+    if (!profile) return { mmsi, status: "pending" as const, name: null };
+    return profile;
+  });
+
+  app.post<{ Params: { mmsi: string } }>("/api/vessels/profile/:mmsi/refresh", async (req, reply) => {
+    const auth = await verifyAdminAuth(req.headers.authorization);
+    if (!auth.ok) return reply.code(401).send({ error: "unauthorized" });
+    const mmsi = String(req.params.mmsi ?? "").trim();
+    if (!/^\d{9}$/.test(mmsi)) return reply.code(400).send({ error: "bad_mmsi" });
+    return scrapeAndStoreProfile(getDb(), mmsi);
+  });
 
   app.get<{
     Querystring: { mmsi?: string; from?: string; to?: string };

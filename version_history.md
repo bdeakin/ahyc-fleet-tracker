@@ -1,5 +1,19 @@
 # Version history
 
+## 0.6.1 — Vessel type colors + AHYC club stars
+
+- Fixed marker coloring: live state now falls back to scraped vessel-class labels when AIS `shipType` is missing (production had shipType=null for all traffic → all gray).
+- AIS forwarder no longer mistakes AIS message id for ship type; stamps learned type/name onto queued positions.
+- Profile scrape writes inferred `ship_type` into `traffic_names` for persistent coloring.
+- AHYC club vessels render with a gold ★ behind the marker.
+
+## 0.6.0 — MMSI vessel profile scrape + cache
+
+- On first sight of an MMSI, server scrapes public vessel particulars (VesselFinder, MyShipTracking fallback) and stores them in SQLite `vessel_profiles`.
+- Subsequent sightings reuse the cache; errors retry after 6 hours.
+- Kiosk detail pane shows flag, call sign, IMO, class, and dimensions when available.
+- `GET /api/vessels/profile/:mmsi` (+ admin refresh POST).
+
 ## 0.5.0 — Ship-type colors + short trails + search
 
 - AIS ship type stored on `traffic_names` and returned on live vessel state with label + marker color.

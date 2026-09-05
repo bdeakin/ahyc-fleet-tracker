@@ -63,11 +63,16 @@ def _clean_name(value: Any) -> str | None:
 
 
 def _extract_ship_type(msg: Any) -> int | None:
-    for attr in ("ship_type", "shipType", "shiptype", "type_and_cargo", "type"):
+    """Pull ITU ship & cargo type from static AIS (type 5 / 24B).
+
+    Do not read bare ``type`` / ``msg_type`` — those are the AIS message id
+    (1–27), not the vessel class, and would paint every Class B boat as type 18.
+    """
+    for attr in ("ship_type", "shipType", "shiptype", "type_and_cargo"):
         raw = getattr(msg, attr, None)
         if raw is None:
             continue
-        # Enum-like objects from pyais
+        # Enum-like objects from pyais (ShipType)
         if hasattr(raw, "value"):
             try:
                 raw = raw.value
@@ -79,6 +84,18 @@ def _extract_ship_type(msg: Any) -> int | None:
             continue
         if 0 < n <= 99:
             return n
+    # Fallback: asdict() payloads
+    asdict = getattr(msg, "asdict", None)
+    if callable(asdict):
+        try:
+            data = asdict()
+            raw = data.get("ship_type") or data.get("shipType")
+            if raw is not None:
+                n = int(getattr(raw, "value", raw))
+                if 0 < n <= 99:
+                    return n
+        except Exception:  # noqa: BLE001
+            pass
     return None
 
 
@@ -95,11 +112,20 @@ def _handle_decoded(msg: Any) -> None:
     if name:
         _names[mmsi] = name
         LOG.info("learned name mmsi=%s name=%s", mmsi, name)
+        with _lock:
+            if mmsi in _pending:
+                _pending[mmsi]["name"] = name
 
     ship_type = _extract_ship_type(msg)
     if ship_type is not None:
         _ship_types[mmsi] = ship_type
         LOG.info("learned shipType mmsi=%s type=%s", mmsi, ship_type)
+        # Static messages have no lat/lon; stamp type onto any queued position.
+        with _lock:
+            if mmsi in _pending:
+                _pending[mmsi]["shipType"] = ship_type
+                if mmsi in _names:
+                    _pending[mmsi]["name"] = _names[mmsi]
 
     lat = getattr(msg, "lat", None)
     lon = getattr(msg, "lon", None)

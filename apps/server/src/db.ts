@@ -86,6 +86,26 @@ function migrate(database: Db) {
       ship_type INTEGER,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS vessel_profiles (
+      mmsi TEXT PRIMARY KEY,
+      name TEXT,
+      flag TEXT,
+      callsign TEXT,
+      imo TEXT,
+      vessel_type TEXT,
+      length_m REAL,
+      beam_m REAL,
+      source TEXT,
+      source_url TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error TEXT,
+      scraped_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vessel_profiles_status ON vessel_profiles(status);
   `);
 
   // Older DBs created traffic_names without ship_type.

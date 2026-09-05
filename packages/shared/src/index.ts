@@ -37,6 +37,23 @@ export type VesselLiveState = {
   ts: number;
 };
 
+/** Cached vessel particulars scraped once per MMSI (VesselFinder / similar). */
+export type VesselProfile = {
+  mmsi: string;
+  name: string | null;
+  flag: string | null;
+  callsign: string | null;
+  imo: string | null;
+  vesselType: string | null;
+  lengthM: number | null;
+  beamM: number | null;
+  source: string | null;
+  sourceUrl: string | null;
+  status: "pending" | "ok" | "not_found" | "error";
+  error: string | null;
+  scrapedAt: number | null;
+};
+
 export type BBox = {
   minLat: number;
   minLon: number;
@@ -159,6 +176,28 @@ export function shipTypeCategory(code: number | null | undefined): ShipTypeCateg
   return "other";
 }
 
+/**
+ * Map free-text vessel class labels (AIS static / VesselFinder scrape) to a
+ * representative ITU ship-type code so markers can be colored when the numeric
+ * AIS ship type has not arrived yet.
+ */
+export function shipTypeCodeFromLabel(label: string | null | undefined): number | null {
+  if (!label) return null;
+  const t = label.toLowerCase();
+  if (/sail|yacht.?sail|sailing/.test(t)) return 36;
+  if (/pleasure|yacht|motor.?yacht|recreational|cabin.?cruiser/.test(t)) return 37;
+  if (/fish/.test(t)) return 30;
+  if (/tug|tow|pusher/.test(t)) return 52;
+  if (/pilot/.test(t)) return 50;
+  if (/sar|search.?and.?rescue|rescue|coast.?guard/.test(t)) return 51;
+  if (/military|warship|naval/.test(t)) return 35;
+  if (/high.?speed|hsc|catamaran.?ferry/.test(t)) return 40;
+  if (/passenger|ferry|cruise/.test(t)) return 60;
+  if (/tanker|oil|lng|lpg|chemical/.test(t)) return 80;
+  if (/cargo|container|bulk|carrier|freighter|general.?cargo|ro-?ro|vehicle/.test(t)) return 70;
+  return null;
+}
+
 export function labelForShipType(code: number | null | undefined): string {
   switch (shipTypeCategory(code)) {
     case "sailing":
@@ -213,3 +252,8 @@ export function colorForShipType(code: number | null | undefined): string {
       return "#6b7280"; // gray
   }
 }
+
+export function colorForShipTypeLabel(label: string | null | undefined): string {
+  return colorForShipType(shipTypeCodeFromLabel(label));
+}
+

@@ -8,6 +8,7 @@ import {
   colorForShipType,
   type ChartLayer,
   type VesselLiveState,
+  type VesselProfile,
 } from "@ahyc/shared";
 import { api, liveSocket } from "../api";
 
@@ -16,7 +17,7 @@ const TRACK_HOURS = 24;
 const DEFAULT_TRAIL_MINUTES = 10;
 
 const TYPE_LEGEND: Array<{ color: string; label: string }> = [
-  { color: "#1f6f8b", label: "AHYC club" },
+  { color: "#1f6f8b", label: "AHYC club ★" },
   { color: "#0f766e", label: "Sailing" },
   { color: "#d97706", label: "Pleasure" },
   { color: "#65a30d", label: "Fishing" },
@@ -53,6 +54,7 @@ export function KioskPage() {
   const [liveVessels, setLiveVessels] = useState<VesselLiveState[]>([]);
   const [selectedMmsi, setSelectedMmsi] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [vesselProfile, setVesselProfile] = useState<VesselProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const windowStart = useMemo(() => rangeEnd - HOURS * 3600_000, [rangeEnd]);
   const scrubTs = windowStart + slider * 60_000;
@@ -260,10 +262,50 @@ export function KioskPage() {
     };
   }, [live, selectedMmsi, rangeEnd, vesselCount]);
 
+
+  useEffect(() => {
+    if (!selectedMmsi) {
+      setVesselProfile(null);
+      return;
+    }
+    let cancelled = false;
+    setVesselProfile(null);
+    const load = () => {
+      api
+        .vesselProfile(selectedMmsi)
+        .then((p) => {
+          if (!cancelled) setVesselProfile(p);
+        })
+        .catch(() => {
+          if (!cancelled) setVesselProfile(null);
+        });
+    };
+    load();
+    // Poll while pending so scrape results appear without reselecting.
+    const id = window.setInterval(() => {
+      if (cancelled) return;
+      api
+        .vesselProfile(selectedMmsi)
+        .then((p) => {
+          if (cancelled) return;
+          setVesselProfile(p);
+          if (p.status === "ok" || p.status === "not_found" || p.status === "error") {
+            window.clearInterval(id);
+          }
+        })
+        .catch(() => undefined);
+    }, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [selectedMmsi]);
+
   function clearSelection() {
     setSelectedMmsi(null);
     setSelectedLabel(null);
     setSearchQuery("");
+    setVesselProfile(null);
   }
 
   function focusVessel(v: VesselLiveState, opts?: { keepSearch?: boolean }) {
@@ -292,15 +334,18 @@ export function KioskPage() {
     for (const v of vessels) {
       const registered = Boolean(v.registered);
       const color = markerColor(v);
-      const size = registered ? 18 : 12;
+      const size = registered ? 22 : 12;
       const icon = L.divIcon({
         className: registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic",
-        html: `<span style="background:${color}"></span>`,
+        html: registered
+          ? `<span class="vessel-marker-star" aria-hidden="true">★</span><span class="vessel-marker-dot" style="background:${color}"></span>`
+          : `<span class="vessel-marker-dot" style="background:${color}"></span>`,
         iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
       });
       const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: registered ? 500 : 0 });
       const label = v.name ?? v.mmsi;
-      const typeBit = registered ? "club" : (v.shipTypeLabel ?? "traffic");
+      const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
       marker.bindTooltip(
         `${label} (${typeBit})${v.sog != null ? ` · ${v.sog.toFixed(1)} kn` : ""}`,
         { direction: "top", offset: [0, -10] },
@@ -427,6 +472,68 @@ export function KioskPage() {
               <dt>Track</dt>
               <dd>Last {TRACK_HOURS} hours</dd>
             </div>
+            {vesselProfile?.status === "pending" && (
+              <div>
+                <dt>Details</dt>
+                <dd>Looking up vessel…</dd>
+              </div>
+            )}
+            {vesselProfile?.status === "ok" && (
+              <>
+                {vesselProfile.flag && (
+                  <div>
+                    <dt>Flag</dt>
+                    <dd>{vesselProfile.flag}</dd>
+                  </div>
+                )}
+                {vesselProfile.callsign && (
+                  <div>
+                    <dt>Call sign</dt>
+                    <dd>{vesselProfile.callsign}</dd>
+                  </div>
+                )}
+                {vesselProfile.imo && (
+                  <div>
+                    <dt>IMO</dt>
+                    <dd>{vesselProfile.imo}</dd>
+                  </div>
+                )}
+                {vesselProfile.vesselType && (
+                  <div>
+                    <dt>Class</dt>
+                    <dd>{vesselProfile.vesselType}</dd>
+                  </div>
+                )}
+                {(vesselProfile.lengthM != null || vesselProfile.beamM != null) && (
+                  <div>
+                    <dt>Size</dt>
+                    <dd>
+                      {vesselProfile.lengthM != null ? `${vesselProfile.lengthM} m` : "—"}
+                      {" × "}
+                      {vesselProfile.beamM != null ? `${vesselProfile.beamM} m` : "—"}
+                    </dd>
+                  </div>
+                )}
+                {vesselProfile.name && vesselProfile.name !== selectedVessel.name && (
+                  <div>
+                    <dt>Registry</dt>
+                    <dd>{vesselProfile.name}</dd>
+                  </div>
+                )}
+              </>
+            )}
+            {vesselProfile?.status === "not_found" && (
+              <div>
+                <dt>Details</dt>
+                <dd>No public record found</dd>
+              </div>
+            )}
+            {vesselProfile?.status === "error" && (
+              <div>
+                <dt>Details</dt>
+                <dd>Lookup failed (will retry)</dd>
+              </div>
+            )}
           </dl>
         </aside>
       )}

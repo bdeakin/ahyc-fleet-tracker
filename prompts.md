@@ -24,3 +24,5 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows NOAA nauti
 - Product rules: traffic 24h; registered MMSIs indefinite; live 10m trails; click/search vessel → 24h track + detail pane
 - Markers color-coded by AIS ship type; club vessels keep registry color
 - Kiosk search: type vessel name or MMSI to zoom and inspect
+- New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known
+- AHYC club vessels: registry color + star marker; traffic colored by AIS/scraped type

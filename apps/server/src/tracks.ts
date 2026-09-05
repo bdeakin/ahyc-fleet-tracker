@@ -2,6 +2,7 @@ import {
   colorForShipType,
   inBbox,
   labelForShipType,
+  shipTypeCodeFromLabel,
   TRAFFIC_BBOX,
   type TrackPoint,
   type VesselLiveState,
@@ -10,6 +11,7 @@ import { config } from "./config.js";
 import type { Db } from "./db.js";
 import { approxMeters } from "./geo.js";
 import { activeMmsis, getVesselByMmsi } from "./vessels.js";
+import { ensureVesselProfileQueued, getVesselProfile } from "./vesselProfiles.js";
 
 const MIN_MOVE_M = 25;
 
@@ -60,6 +62,21 @@ function upsertTrafficMeta(
   }
 }
 
+function profileShipType(db: Db, mmsi: string): { code: number | null; label: string | null; name: string | null } {
+  try {
+    const profile = getVesselProfile(db, mmsi);
+    if (!profile || profile.status !== "ok") return { code: null, label: null, name: null };
+    const code = shipTypeCodeFromLabel(profile.vesselType);
+    return {
+      code,
+      label: profile.vesselType,
+      name: profile.name,
+    };
+  } catch {
+    return { code: null, label: null, name: null };
+  }
+}
+
 function toLive(
   db: Db,
   point: TrackPoint,
@@ -69,18 +86,26 @@ function toLive(
   const vessel = getVesselByMmsi(db, point.mmsi);
   const registered = Boolean(vessel?.active);
   const meta = trafficMeta(db, point.mmsi);
+  const profile = profileShipType(db, point.mmsi);
   const shipType =
     shipTypeHint != null && Number(shipTypeHint) > 0
       ? Math.trunc(Number(shipTypeHint))
-      : meta.shipType;
+      : meta.shipType != null && meta.shipType > 0
+        ? meta.shipType
+        : profile.code;
+  // If AIS numeric type is still unknown, keep scraped class label for the UI.
+  const shipTypeLabel =
+    shipType != null && shipType > 0
+      ? labelForShipType(shipType)
+      : profile.label ?? labelForShipType(shipType);
   return {
     mmsi: point.mmsi,
     vesselId: vessel?.id,
-    name: vessel?.name ?? nameHint ?? meta.name ?? undefined,
+    name: vessel?.name ?? nameHint ?? meta.name ?? profile.name ?? undefined,
     color: registered ? vessel?.color : colorForShipType(shipType),
     registered,
     shipType: shipType ?? null,
-    shipTypeLabel: labelForShipType(shipType),
+    shipTypeLabel,
     lat: point.lat,
     lon: point.lon,
     sog: point.sog,
@@ -161,6 +186,9 @@ export function ingestPosition(
     upsertTrafficMeta(db, point.mmsi, point.name, point.shipType);
   }
 
+  // Scrape public MMSI particulars once per vessel; results cached in SQLite.
+  ensureVesselProfileQueued(db, point.mmsi);
+
   return {
     stored,
     accepted: true,
@@ -178,7 +206,7 @@ export function listLiveStates(db: Db): VesselLiveState[] {
     heading: number | null;
     ts: number;
   }>;
-  return rows.map((r) =>
+  const live = rows.map((r) =>
     toLive(db, {
       mmsi: r.mmsi,
       lat: r.lat,
@@ -189,6 +217,13 @@ export function listLiveStates(db: Db): VesselLiveState[] {
       ts: r.ts,
     }),
   );
+  // Backfill colors: queue public profile scrapes for traffic still missing a type.
+  for (const v of live) {
+    if (!v.registered && (v.shipType == null || v.shipType <= 0)) {
+      ensureVesselProfileQueued(db, v.mmsi);
+    }
+  }
+  return live;
 }
 
 export function queryTracks(
