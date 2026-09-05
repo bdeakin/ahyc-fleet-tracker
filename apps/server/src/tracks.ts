@@ -10,6 +10,7 @@ import { config } from "./config.js";
 import type { Db } from "./db.js";
 import { approxMeters } from "./geo.js";
 import { activeMmsis, getVesselByMmsi } from "./vessels.js";
+import { ensureVesselProfileQueued } from "./vesselProfiles.js";
 
 const MIN_MOVE_M = 25;
 
@@ -160,6 +161,9 @@ export function ingestPosition(
   if (!getVesselByMmsi(db, point.mmsi)) {
     upsertTrafficMeta(db, point.mmsi, point.name, point.shipType);
   }
+
+  // Scrape public MMSI particulars once per vessel; results cached in SQLite.
+  ensureVesselProfileQueued(db, point.mmsi);
 
   return {
     stored,

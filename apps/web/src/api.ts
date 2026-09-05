@@ -1,5 +1,5 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
-import type { AdventureNarrative, ChartLayer, Vessel, VesselLiveState, TrackPoint } from "@ahyc/shared";
+import type { AdventureNarrative, ChartLayer, Vessel, VesselLiveState, VesselProfile, TrackPoint } from "@ahyc/shared";
 
 const adminToken = () => localStorage.getItem("ahyc_admin_token") ?? "dev-admin-token";
 const supabaseAccessToken = () => localStorage.getItem("ahyc_supabase_access_token");
@@ -33,6 +33,7 @@ export const api = {
   config: () => json<PublicConfig>("/api/config"),
   vessels: () => json<Vessel[]>("/api/vessels"),
   live: () => json<VesselLiveState[]>("/api/live"),
+  vesselProfile: (mmsi: string) => json<VesselProfile>(`/api/vessels/profile/${mmsi}`),
   charts: () => json<ChartLayer[]>("/api/charts"),
   syncVessels: () =>
     json<{ synced: number; configured: boolean }>("/api/sync/vessels", {

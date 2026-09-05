@@ -8,6 +8,7 @@ import {
   colorForShipType,
   type ChartLayer,
   type VesselLiveState,
+  type VesselProfile,
 } from "@ahyc/shared";
 import { api, liveSocket } from "../api";
 
@@ -53,6 +54,7 @@ export function KioskPage() {
   const [liveVessels, setLiveVessels] = useState<VesselLiveState[]>([]);
   const [selectedMmsi, setSelectedMmsi] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [vesselProfile, setVesselProfile] = useState<VesselProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const windowStart = useMemo(() => rangeEnd - HOURS * 3600_000, [rangeEnd]);
   const scrubTs = windowStart + slider * 60_000;
@@ -260,10 +262,50 @@ export function KioskPage() {
     };
   }, [live, selectedMmsi, rangeEnd, vesselCount]);
 
+
+  useEffect(() => {
+    if (!selectedMmsi) {
+      setVesselProfile(null);
+      return;
+    }
+    let cancelled = false;
+    setVesselProfile(null);
+    const load = () => {
+      api
+        .vesselProfile(selectedMmsi)
+        .then((p) => {
+          if (!cancelled) setVesselProfile(p);
+        })
+        .catch(() => {
+          if (!cancelled) setVesselProfile(null);
+        });
+    };
+    load();
+    // Poll while pending so scrape results appear without reselecting.
+    const id = window.setInterval(() => {
+      if (cancelled) return;
+      api
+        .vesselProfile(selectedMmsi)
+        .then((p) => {
+          if (cancelled) return;
+          setVesselProfile(p);
+          if (p.status === "ok" || p.status === "not_found" || p.status === "error") {
+            window.clearInterval(id);
+          }
+        })
+        .catch(() => undefined);
+    }, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [selectedMmsi]);
+
   function clearSelection() {
     setSelectedMmsi(null);
     setSelectedLabel(null);
     setSearchQuery("");
+    setVesselProfile(null);
   }
 
   function focusVessel(v: VesselLiveState, opts?: { keepSearch?: boolean }) {
@@ -427,6 +469,68 @@ export function KioskPage() {
               <dt>Track</dt>
               <dd>Last {TRACK_HOURS} hours</dd>
             </div>
+            {vesselProfile?.status === "pending" && (
+              <div>
+                <dt>Details</dt>
+                <dd>Looking up vessel…</dd>
+              </div>
+            )}
+            {vesselProfile?.status === "ok" && (
+              <>
+                {vesselProfile.flag && (
+                  <div>
+                    <dt>Flag</dt>
+                    <dd>{vesselProfile.flag}</dd>
+                  </div>
+                )}
+                {vesselProfile.callsign && (
+                  <div>
+                    <dt>Call sign</dt>
+                    <dd>{vesselProfile.callsign}</dd>
+                  </div>
+                )}
+                {vesselProfile.imo && (
+                  <div>
+                    <dt>IMO</dt>
+                    <dd>{vesselProfile.imo}</dd>
+                  </div>
+                )}
+                {vesselProfile.vesselType && (
+                  <div>
+                    <dt>Class</dt>
+                    <dd>{vesselProfile.vesselType}</dd>
+                  </div>
+                )}
+                {(vesselProfile.lengthM != null || vesselProfile.beamM != null) && (
+                  <div>
+                    <dt>Size</dt>
+                    <dd>
+                      {vesselProfile.lengthM != null ? `${vesselProfile.lengthM} m` : "—"}
+                      {" × "}
+                      {vesselProfile.beamM != null ? `${vesselProfile.beamM} m` : "—"}
+                    </dd>
+                  </div>
+                )}
+                {vesselProfile.name && vesselProfile.name !== selectedVessel.name && (
+                  <div>
+                    <dt>Registry</dt>
+                    <dd>{vesselProfile.name}</dd>
+                  </div>
+                )}
+              </>
+            )}
+            {vesselProfile?.status === "not_found" && (
+              <div>
+                <dt>Details</dt>
+                <dd>No public record found</dd>
+              </div>
+            )}
+            {vesselProfile?.status === "error" && (
+              <div>
+                <dt>Details</dt>
+                <dd>Lookup failed (will retry)</dd>
+              </div>
+            )}
           </dl>
         </aside>
       )}

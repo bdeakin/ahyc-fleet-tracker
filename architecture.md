@@ -20,9 +20,10 @@
 3. Optional AISStream worker can still subscribe with `FiltersShipMMSI` = active club MMSIs (cloud fallback).
 4. Primary harbor feed: Pi **AIS Dispatcher** UDP → `deploy/ais-forwarder` → `POST /api/ais/ingest` (Bearer `AIS_INGEST_TOKEN`). Forwarder assembles multipart AIVDM, caches vessel name + ITU ship type from static messages, and batches positions. Server filters to `TRAFFIC_BBOX`, downsamples to ~60s/MMSI, stores live + tracks + optional `traffic_names.ship_type`.
 5. Retention: non-registered traffic pruned after `TRAFFIC_RETENTION_HOURS` (default 24h); registered club MMSIs kept indefinitely.
-6. Kiosk colors traffic markers by AIS ship type (club vessels keep registry colors); live view draws a 10-minute trail per vessel; click or search a vessel to zoom, open a detail pane, and draw a 24h track.
-7. Timeline scrubbing uses `/api/tracks` and `/api/tracks/replay`.
-8. Adventures recomputes trips for a vessel/season, builds prose, and returns track geometries for the stylized map.
+6. First sight of an MMSI queues a public profile scrape (VesselFinder → MyShipTracking fallback); results persist in `vessel_profiles` and are shown in the kiosk detail pane.
+7. Kiosk colors traffic markers by AIS ship type (club vessels keep registry colors); live view draws a 10-minute trail per vessel; click or search a vessel to zoom, open a detail pane, and draw a 24h track.
+8. Timeline scrubbing uses `/api/tracks` and `/api/tracks/replay`.
+9. Adventures recomputes trips for a vessel/season, builds prose, and returns track geometries for the stylized map.
 
 ## Season model
 

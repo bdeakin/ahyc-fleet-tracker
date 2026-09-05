@@ -37,6 +37,23 @@ export type VesselLiveState = {
   ts: number;
 };
 
+/** Cached vessel particulars scraped once per MMSI (VesselFinder / similar). */
+export type VesselProfile = {
+  mmsi: string;
+  name: string | null;
+  flag: string | null;
+  callsign: string | null;
+  imo: string | null;
+  vesselType: string | null;
+  lengthM: number | null;
+  beamM: number | null;
+  source: string | null;
+  sourceUrl: string | null;
+  status: "pending" | "ok" | "not_found" | "error";
+  error: string | null;
+  scrapedAt: number | null;
+};
+
 export type BBox = {
   minLat: number;
   minLon: number;

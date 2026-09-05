@@ -1,5 +1,12 @@
 # Version history
 
+## 0.6.0 — MMSI vessel profile scrape + cache
+
+- On first sight of an MMSI, server scrapes public vessel particulars (VesselFinder, MyShipTracking fallback) and stores them in SQLite `vessel_profiles`.
+- Subsequent sightings reuse the cache; errors retry after 6 hours.
+- Kiosk detail pane shows flag, call sign, IMO, class, and dimensions when available.
+- `GET /api/vessels/profile/:mmsi` (+ admin refresh POST).
+
 ## 0.5.0 — Ship-type colors + short trails + search
 
 - AIS ship type stored on `traffic_names` and returned on live vessel state with label + marker color.
