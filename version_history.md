@@ -1,5 +1,13 @@
 # Version history
 
+## 0.8.0 — AISHub Northeast bbox + outbound MMSI watch
+
+- Optional AISHub poller (`AISHUB_USERNAME`) pulls a Chesapeake→Maine bbox about once per day for club vessels.
+- Club boats near/outside that perimeter are added to an MMSI watchlist and polled until they return deep inside the box (Bermuda-race style departures).
+- Hard shared rate limit: **at most one AISHub HTTP call per minute** (bbox and MMSI share the budget).
+- Club vessel positions may be stored outside the harbor `TRAFFIC_BBOX` so offshore tracks persist.
+
+
 ## 0.7.0 — Simplified ocean basemap + sailing/pleasure colors
 
 - Default kiosk basemap is Esri Ocean Base + Ocean Reference (bathymetry shading and place names like Raritan Bay) instead of the dense full NOAA WMS chart; NOAA full chart remains selectable.

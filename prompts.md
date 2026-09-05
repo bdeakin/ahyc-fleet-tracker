@@ -26,3 +26,9 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Kiosk search: type vessel name or MMSI to zoom and inspect
 - New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known
 - Default basemap: Esri Ocean (depth + labels); switcher keeps full NOAA Chart Display WMS
+
+## AISHub (Northeast + offshore)
+
+- Set `AISHUB_USERNAME` on Railway
+- Daily Northeast bbox for club boats; MMSI watchlist when they approach/leave the perimeter
+- Never call AISHub more than once per minute

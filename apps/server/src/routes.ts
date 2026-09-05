@@ -17,6 +17,7 @@ import {
   upsertVessel,
 } from "./vessels.js";
 import type { AisIngestWorker } from "./aisWorker.js";
+import type { AishubWorker } from "./aishubWorker.js";
 import {
   deleteVesselFromSupabase,
   publicSupabaseConfig,
@@ -29,10 +30,13 @@ export async function registerRoutes(
   app: FastifyInstance,
   ais: AisIngestWorker,
   broadcast: (payload: unknown) => void,
+  aishub: AishubWorker,
 ) {
   app.get("/api/health", async () => ({ ok: true }));
 
   app.get("/api/ais/status", async () => ais.getStatus());
+
+  app.get("/api/aishub/status", async () => aishub.getStatus());
 
   app.get("/api/config", async () => ({
     supabase: publicSupabaseConfig(),
@@ -44,6 +48,7 @@ export async function registerRoutes(
       lastIngestAt: ais.getStatus().lastIngestAt,
       lastError: ais.getStatus().lastError,
       ingestTokenConfigured: Boolean(config.aisIngestToken),
+      aishub: aishub.getStatus(),
     },
   }));
 

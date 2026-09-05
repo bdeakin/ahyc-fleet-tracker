@@ -5,6 +5,7 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import { AisIngestWorker } from "./aisWorker.js";
+import { AishubWorker } from "./aishubWorker.js";
 import { ensurePrimaryClubVessel } from "./bootstrap.js";
 import { config, paths } from "./config.js";
 import { getDb } from "./db.js";
@@ -36,6 +37,7 @@ function broadcast(payload: unknown) {
 }
 
 const ais = new AisIngestWorker(broadcast);
+const aishub = new AishubWorker(broadcast);
 
 app.get("/api/ws/live", { websocket: true }, (socket) => {
   liveClients.add(socket);
@@ -43,7 +45,7 @@ app.get("/api/ws/live", { websocket: true }, (socket) => {
   socket.on("close", () => liveClients.delete(socket));
 });
 
-await registerRoutes(app, ais, broadcast);
+await registerRoutes(app, ais, broadcast, aishub);
 
 const webDist = path.resolve(config.root, "apps/web/dist");
 if (fs.existsSync(webDist)) {
@@ -63,6 +65,7 @@ if (fs.existsSync(webDist)) {
 await app.listen({ port: config.port, host: config.host });
 console.log(`[ahyc] listening on http://${config.host}:${config.port}`);
 ais.start();
+aishub.start();
 
 // Drop non-registered harbor traffic older than TRAFFIC_RETENTION_HOURS (default 24h).
 function runTrafficPrune() {

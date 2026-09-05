@@ -146,6 +146,51 @@ export const DEFAULT_BBOX = {
   maxLon: -71.8,
 } as const satisfies BBox;
 
+/**
+ * AISHub daily coverage: Chesapeake Bay mouth through Downeast Maine
+ * (greater Northeast seaboard for club vessel tracking).
+ */
+export const NORTHEAST_BBOX = {
+  minLat: 36.5,
+  minLon: -77.5,
+  maxLat: 45.0,
+  maxLon: -66.5,
+} as const satisfies BBox;
+
+/** Default perimeter band (degrees) inside NORTHEAST_BBOX that triggers MMSI watch. ~30 nm. */
+export const NORTHEAST_PERIMETER_DEG = 0.5;
+
+/** True when lat/lon is outside bbox or within `marginDeg` of an edge. */
+export function nearOrOutsideBbox(
+  lat: number,
+  lon: number,
+  bbox: BBox,
+  marginDeg: number = NORTHEAST_PERIMETER_DEG,
+): boolean {
+  if (!inBbox(lat, lon, bbox)) return true;
+  return (
+    lat < bbox.minLat + marginDeg ||
+    lat > bbox.maxLat - marginDeg ||
+    lon < bbox.minLon + marginDeg ||
+    lon > bbox.maxLon - marginDeg
+  );
+}
+
+/** True when safely inside bbox (outside the perimeter band) — hysteresis for watch removal. */
+export function deepInsideBbox(
+  lat: number,
+  lon: number,
+  bbox: BBox,
+  marginDeg: number = NORTHEAST_PERIMETER_DEG,
+): boolean {
+  return (
+    lat >= bbox.minLat + marginDeg &&
+    lat <= bbox.maxLat - marginDeg &&
+    lon >= bbox.minLon + marginDeg &&
+    lon <= bbox.maxLon - marginDeg
+  );
+}
+
 export const NOAA_CHART_WMS =
   "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/WMSServer";
 

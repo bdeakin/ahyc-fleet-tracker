@@ -106,6 +106,15 @@ function migrate(database: Db) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_vessel_profiles_status ON vessel_profiles(status);
+
+    CREATE TABLE IF NOT EXISTS aishub_watch (
+      mmsi TEXT PRIMARY KEY,
+      reason TEXT,
+      added_at INTEGER NOT NULL,
+      last_lat REAL,
+      last_lon REAL,
+      last_seen_at INTEGER
+    );
   `);
 
   // Older DBs created traffic_names without ship_type.

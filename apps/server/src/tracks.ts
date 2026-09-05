@@ -117,12 +117,14 @@ function toLive(
 
 /**
  * Upsert live state and optionally append a track point.
- * Rejects positions outside TRAFFIC_BBOX.
+ * Rejects non-club positions outside TRAFFIC_BBOX.
+ * Club vessels (and explicit allowOutsideTrafficBbox) may be stored anywhere
+ * so AISHub can track Bermuda-race departures beyond the Northeast box.
  * Downsamples track storage to ~trackMinIntervalMs (default 60s) per MMSI.
  */
 export function ingestPosition(
   db: Db,
-  point: IngestPositionInput,
+  point: IngestPositionInput & { allowOutsideTrafficBbox?: boolean },
 ): { stored: boolean; accepted: boolean; live: VesselLiveState | null } {
   if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) {
     return { stored: false, accepted: false, live: null };
@@ -130,7 +132,8 @@ export function ingestPosition(
   if (point.lat === 91 || point.lon === 181) {
     return { stored: false, accepted: false, live: null };
   }
-  if (!inBbox(point.lat, point.lon, TRAFFIC_BBOX)) {
+  const club = activeMmsis(db).includes(point.mmsi) || activeMmsis(db).includes(point.mmsi.padStart(9, "0"));
+  if (!point.allowOutsideTrafficBbox && !club && !inBbox(point.lat, point.lon, TRAFFIC_BBOX)) {
     return { stored: false, accepted: false, live: null };
   }
 

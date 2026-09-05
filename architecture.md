@@ -13,6 +13,13 @@
 - **Railway (phone-friendly):** always-on Node service, volume at `/data` for SQLite, chart tiles over the network. See `deploy/CLOUD.md`.
 - **Raspberry Pi kiosk:** same app + Chromium `--kiosk`. See `deploy/README.md`.
 
+## AISHub (optional)
+
+- Env: `AISHUB_USERNAME` on Railway.
+- Daily bbox: `NORTHEAST_BBOX` (Chesapeake → Maine) for club MMSIs.
+- Perimeter watch: club boats near/outside the box are stored in SQLite `aishub_watch` and queried via the AISHub `mmsi=` parameter until `deepInsideBbox`.
+- Rate limit: one HTTP request per minute total (bbox + MMSI share a single scheduler).
+
 ## Data flow
 
 1. Admins register club vessels (name, MMSI, color) via `/admin` (Supabase auth when configured, else local admin token).
