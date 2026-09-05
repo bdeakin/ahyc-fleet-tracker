@@ -177,6 +177,15 @@ select {
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
 }
 
+.vessel-marker--traffic span {
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  border-width: 1px;
+  opacity: 0.85;
+}
+
 .page {
   min-height: 100%;
   background:

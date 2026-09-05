@@ -25,6 +25,7 @@ export type PublicConfig = {
     lastMessageAt: number | null;
     lastIngestAt: number | null;
     lastError: string | null;
+    ingestTokenConfigured?: boolean;
   };
 };
 

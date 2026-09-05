@@ -24,12 +24,21 @@ export type VesselLiveState = {
   vesselId?: string;
   name?: string;
   color?: string;
+  /** True when MMSI is in the club vessel registry. */
+  registered?: boolean;
   lat: number;
   lon: number;
   sog?: number | null;
   cog?: number | null;
   heading?: number | null;
   ts: number;
+};
+
+export type BBox = {
+  minLat: number;
+  minLon: number;
+  maxLat: number;
+  maxLon: number;
 };
 
 export type TripSummary = {
@@ -78,16 +87,31 @@ export type ChartLayer =
 
 export const AHYC_CENTER = { lat: 40.4185, lon: -74.0385 } as const;
 
-/** AIS subscription bbox: NY Harbor through Long Island Sound (club cruising range) */
+/**
+ * Harbor traffic / Dispatcher ingest bbox:
+ * Hudson + East River, out toward Fire Island, Ambrose approaches, around Sandy Hook.
+ */
+export const TRAFFIC_BBOX = {
+  minLat: 40.3,
+  minLon: -74.3,
+  maxLat: 41.05,
+  maxLon: -72.85,
+} as const satisfies BBox;
+
+/** AISStream club-vessel subscription bbox (includes Long Island Sound cruising range). */
 export const DEFAULT_BBOX = {
   minLat: 40.0,
   minLon: -74.5,
   maxLat: 41.5,
   maxLon: -71.8,
-} as const;
+} as const satisfies BBox;
 
 export const NOAA_CHART_WMS =
   "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/WMSServer";
+
+export function inBbox(lat: number, lon: number, bbox: BBox = TRAFFIC_BBOX): boolean {
+  return lat >= bbox.minLat && lat <= bbox.maxLat && lon >= bbox.minLon && lon <= bbox.maxLon;
+}
 
 export function seasonBounds(year: number, start = "04-01", end = "10-31") {
   const [sm, sd] = start.split("-").map(Number);

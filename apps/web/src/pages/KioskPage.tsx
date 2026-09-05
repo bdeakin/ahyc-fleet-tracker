@@ -6,6 +6,7 @@ import { AHYC_CENTER, NOAA_CHART_WMS, type ChartLayer, type VesselLiveState } fr
 import { api, liveSocket } from "../api";
 
 const HOURS = 48;
+const TRACK_HOURS = 24;
 
 export function KioskPage() {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -21,6 +22,8 @@ export function KioskPage() {
   const [slider, setSlider] = useState(HOURS * 60); // minutes from start of window
   const [aisHint, setAisHint] = useState<string | null>(null);
   const [vesselCount, setVesselCount] = useState(0);
+  const [selectedMmsi, setSelectedMmsi] = useState<string | null>(null);
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const windowStart = useMemo(() => rangeEnd - HOURS * 3600_000, [rangeEnd]);
   const scrubTs = windowStart + slider * 60_000;
 
@@ -35,13 +38,17 @@ export function KioskPage() {
         .then((cfg) => {
           const ais = cfg.ais;
           if (!ais) return;
-          if (!ais.apiKeyConfigured) {
-            setAisHint("AISStream API key is not set on the server (Railway variable AISSTREAM_API_KEY).");
-          } else if (!ais.connected) {
-            setAisHint(ais.lastError ? `AIS disconnected: ${ais.lastError}` : "Connecting to AISStream…");
-          } else if (!ais.lastIngestAt) {
+          if (!ais.apiKeyConfigured && !ais.ingestTokenConfigured) {
             setAisHint(
-              `Listening for ${ais.watchingMmsi.join(", ") || "club vessels"} — no position reports yet (AIS may be out of shore-station range).`,
+              "No AIS source configured. Set AISSTREAM_API_KEY and/or AIS_INGEST_TOKEN (Pi Dispatcher forwarder) on Railway.",
+            );
+          } else if (ais.ingestTokenConfigured && !ais.apiKeyConfigured) {
+            setAisHint(null);
+          } else if (ais.apiKeyConfigured && !ais.connected) {
+            setAisHint(ais.lastError ? `AISStream disconnected: ${ais.lastError}` : "Connecting to AISStream…");
+          } else if (ais.apiKeyConfigured && !ais.lastIngestAt) {
+            setAisHint(
+              `Listening for ${ais.watchingMmsi.join(", ") || "club vessels"} — no AISStream positions yet (Dispatcher feed may still populate traffic).`,
             );
           } else {
             setAisHint(null);
@@ -104,7 +111,6 @@ export function KioskPage() {
       }
       if (data.type === "vessel" && data.vessel) {
         setRangeEnd(Date.now());
-        // merge single update by refetching snapshot lightly
         api.live().then(drawMarkers).catch(() => undefined);
       }
     });
@@ -140,20 +146,63 @@ export function KioskPage() {
       .catch(() => undefined);
   }, [live, scrubTs, windowStart]);
 
+  useEffect(() => {
+    if (!live || !selectedMmsi) return;
+    const to = Date.now();
+    const from = to - TRACK_HOURS * 3600_000;
+    let cancelled = false;
+    api
+      .tracks(from, to, selectedMmsi)
+      .then((points) => {
+        if (cancelled) return;
+        const group = tracksRef.current;
+        if (!group) return;
+        group.clearLayers();
+        if (points.length < 2) return;
+        const coords = points.map((p) => [p.lat, p.lon] as L.LatLngExpression);
+        L.polyline(coords, { color: "#c45c26", weight: 4, opacity: 0.9 }).addTo(group);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [live, selectedMmsi, rangeEnd]);
+
+  function clearSelection() {
+    setSelectedMmsi(null);
+    setSelectedLabel(null);
+    tracksRef.current?.clearLayers();
+  }
+
   function drawMarkers(vessels: VesselLiveState[]) {
     setVesselCount(vessels.length);
     const group = markersRef.current;
     if (!group) return;
     group.clearLayers();
     for (const v of vessels) {
-      const color = v.color ?? "#1f6f8b";
+      const registered = Boolean(v.registered);
+      const color = registered ? (v.color ?? "#1f6f8b") : "#6b7280";
+      const size = registered ? 18 : 12;
       const icon = L.divIcon({
-        className: "vessel-marker",
+        className: registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic",
         html: `<span style="background:${color}"></span>`,
-        iconSize: [18, 18],
+        iconSize: [size, size],
       });
-      const marker = L.marker([v.lat, v.lon], { icon });
-      marker.bindTooltip(v.name ?? v.mmsi, { direction: "top", offset: [0, -10] });
+      const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: registered ? 500 : 0 });
+      const label = v.name ?? v.mmsi;
+      marker.bindTooltip(
+        `${label}${registered ? " (club)" : ""}${v.sog != null ? ` · ${v.sog.toFixed(1)} kn` : ""}`,
+        { direction: "top", offset: [0, -10] },
+      );
+      marker.on("click", () => {
+        setSelectedMmsi(v.mmsi);
+        setSelectedLabel(label);
+        if (!live) {
+          setLive(true);
+          setSlider(HOURS * 60);
+          setRangeEnd(Date.now());
+        }
+      });
       marker.addTo(group);
     }
   }
@@ -162,20 +211,36 @@ export function KioskPage() {
     <div className="kiosk">
       <div className="kiosk-brand">
         <h1>Atlantic Highlands Yacht Club</h1>
-        <p>Local sailing grounds · club vessels · NOAA charts</p>
+        <p>Local sailing grounds · club & harbor traffic · NOAA charts</p>
       </div>
       <div className="kiosk-actions">
         <Link to="/adventures">Season adventures</Link>
         <Link to="/admin">Admin</Link>
         {!live && (
-          <button type="button" onClick={() => { setLive(true); setSlider(HOURS * 60); setRangeEnd(Date.now()); tracksRef.current?.clearLayers(); }}>
+          <button
+            type="button"
+            onClick={() => {
+              setLive(true);
+              setSlider(HOURS * 60);
+              setRangeEnd(Date.now());
+              if (!selectedMmsi) tracksRef.current?.clearLayers();
+            }}
+          >
             Jump to live
+          </button>
+        )}
+        {selectedMmsi && (
+          <button type="button" onClick={clearSelection}>
+            Clear track{selectedLabel ? `: ${selectedLabel}` : ""}
           </button>
         )}
       </div>
       <div className="chart-select">
         <select value={chartId} onChange={(e) => setChartId(e.target.value)} aria-label="Chart layer">
-          {(charts.length ? charts : [{ id: "noaa-wms", kind: "noaa-wms" as const, label: "NOAA Chart Display (live WMS)" }]).map((c) => (
+          {(charts.length
+            ? charts
+            : [{ id: "noaa-wms", kind: "noaa-wms" as const, label: "NOAA Chart Display (live WMS)" }]
+          ).map((c) => (
             <option key={c.id} value={c.id}>
               {c.label}
             </option>
@@ -185,10 +250,15 @@ export function KioskPage() {
       <div ref={mapRef} />
       <div className="timeline">
         <label>
-          <span>{live ? "Live" : "Replay"}{vesselCount ? ` · ${vesselCount} vessel${vesselCount === 1 ? "" : "s"}` : ""}</span>
+          <span>
+            {live ? "Live" : "Replay"}
+            {vesselCount ? ` · ${vesselCount} vessel${vesselCount === 1 ? "" : "s"}` : ""}
+            {selectedMmsi ? ` · track ${TRACK_HOURS}h` : ""}
+          </span>
           <span>{new Date(scrubTs).toLocaleString()}</span>
         </label>
         {aisHint && <p className="ais-hint">{aisHint}</p>}
+        <p className="ais-hint">Click a vessel to show its track for the past {TRACK_HOURS} hours.</p>
         <input
           type="range"
           min={0}
@@ -196,6 +266,8 @@ export function KioskPage() {
           value={slider}
           onChange={(e) => {
             setLive(false);
+            setSelectedMmsi(null);
+            setSelectedLabel(null);
             setSlider(Number(e.target.value));
           }}
         />

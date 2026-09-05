@@ -18,6 +18,12 @@ export const config = {
   host: process.env.HOST ?? "0.0.0.0",
   dataDir: path.resolve(root, process.env.DATA_DIR ?? "./data"),
   aisstreamApiKey: process.env.AISSTREAM_API_KEY ?? "",
+  /** Shared secret for POST /api/ais/ingest (Pi AIS Dispatcher forwarder). */
+  aisIngestToken: process.env.AIS_INGEST_TOKEN ?? "",
+  /** How long to keep non-registered (traffic) track points / live state. */
+  trafficRetentionMs: num("TRAFFIC_RETENTION_HOURS", 24) * 3600_000,
+  /** Min interval between stored track points per MMSI (Dispatcher + AISStream). */
+  trackMinIntervalMs: num("TRACK_MIN_INTERVAL_SEC", 60) * 1000,
   homeLat: num("HOME_LAT", 40.4185),
   homeLon: num("HOME_LON", -74.0385),
   homeRadiusNm: num("HOME_RADIUS_NM", 0.4),

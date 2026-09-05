@@ -122,8 +122,7 @@ export function AdminPage() {
         </div>
 
         <p style={{ maxWidth: "42rem", opacity: 0.9 }}>
-          Register club boats by MMSI. Only these vessels appear on the kiosk map and in season
-          adventures. Prefer Supabase email login when configured; otherwise use the local admin
+          Register club boats by MMSI. Club vessels keep indefinite track history; other harbor traffic from the Pi AIS Dispatcher is kept for 24 hours and appears on the kiosk. Season adventures use club vessels. Prefer Supabase email login when configured; otherwise use the local admin
           token. The Pi pulls the cloud registry every few minutes.
         </p>
 

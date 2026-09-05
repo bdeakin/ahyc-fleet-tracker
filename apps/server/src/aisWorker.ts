@@ -192,7 +192,7 @@ export class AisIngestWorker {
     const heading = report.TrueHeading != null ? Number(report.TrueHeading) : null;
     const ts = meta.time_utc ? Date.parse(String(meta.time_utc)) : Date.now();
 
-    const { live } = ingestPosition(getDb(), {
+    const { live, accepted } = ingestPosition(getDb(), {
       mmsi,
       lat,
       lon,
@@ -201,6 +201,7 @@ export class AisIngestWorker {
       heading: heading != null && heading !== 511 && Number.isFinite(heading) ? heading : null,
       ts: Number.isFinite(ts) ? ts : Date.now(),
     });
+    if (!accepted || !live) return;
     this.ingestCount += 1;
     this.lastIngestAt = Date.now();
     this.broadcast({ type: "vessel", vessel: live });

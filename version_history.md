@@ -1,5 +1,15 @@
 # Version history
 
+## 0.4.0 — AIS Dispatcher harbor ingest
+
+- `POST /api/ais/ingest` accepts batched positions from the Pi (Bearer `AIS_INGEST_TOKEN`).
+- Harbor traffic filtered to NYC `TRAFFIC_BBOX`, downsampled ~60s/MMSI.
+- Non-registered vessels retained 24h; registered club vessels kept indefinitely.
+- Kiosk shows traffic markers; click a vessel for a 24h track polyline.
+- `deploy/ais-forwarder`: Python UDP→HTTPS bridge + systemd unit for AIS Dispatcher.
+
+# Version history
+
 ## 0.3.2 — 2026-08-21
 
 - AIS ingest: Class B extended reports, broader subscription, status endpoint
