@@ -1,5 +1,12 @@
 # Version history
 
+## 0.9.14 — Stale transponders fade off the chart
+
+- A vessel's icon is drawn at full strength for the first 10 minutes after its last AIS report, then fades steadily, and leaves the chart an hour after that report. Class A transmits every few seconds and class B every 30, so a ten-minute-old fix is already a guess and an hour-old one only says something was once there.
+- The fade runs on its own 30-second clock rather than waiting for the next live refresh, so positions keep ageing honestly even when the AIS feed drops — verified with the feed blocked in the browser: markers kept fading and the expiring one left the chart with no server contact.
+- Vessels off the chart are still in the app: search finds them, tray cards keep them, and the "last report" counter says how old the fix is. The hover tooltip also carries the age once a vessel has been quiet for 10 minutes.
+- Short trails and the "in view" count follow the same rule, and collision-risk outlines no longer consider hour-old ghosts.
+
 ## 0.9.13 — Second pass on memory
 
 Measured on the same 4.3 M-point database under sustained load (six clients, continuous heavy queries):

@@ -674,6 +674,8 @@ select {
   background: transparent;
   border: none;
   overflow: visible !important;
+  /* Leaflet sets opacity inline as a fix ages; ease it so the chart never blinks. */
+  transition: opacity 900ms ease;
 }
 
 .vessel-marker-shape {

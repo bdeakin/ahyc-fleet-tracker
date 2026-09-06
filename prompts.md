@@ -45,6 +45,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Selecting a noteworthy event gives a **replay scrubber**: play/pause plus a time slider that moves the transponders along their stored fixes
 - Click a vessel → right pane can **Add to watch list** (indefinite track retention); bottom tray (right of AIS source / Show) holds as many cards as fit left→right and drops the rightmost on shrink; collision-risk contacts get a pulsing red outline (CPA ≤ 0.1 nm, moving/moving or moving/stopped)
 - AIS markers: circle when stopped, course arrow when moving; zoom control bottom-right; tagline top-center
+- Transponder icons fade after 10 minutes without a report and leave the chart after an hour; the vessel stays in search and on its tray card
 - Default basemap overzooms Esri Ocean past ~z13; optional Ocean + OpenSeaMap seamarks for buoys/lights without full NOAA clutter
 
 ## AISHub (Northeast + offshore)

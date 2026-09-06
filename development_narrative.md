@@ -1,5 +1,15 @@
 # Development narrative
 
+## 2026-09-06 — A position is only as good as its age
+
+Every icon on the chart was drawn as though it were current, whether the report behind it arrived four seconds ago or four hours ago. On a harbour feed that stitches together a radio receiver, AISHub and AISStream, plenty of vessels stop reporting while their last known position sits there looking authoritative — a ghost fleet that never moves and never leaves.
+
+So icons now carry their own age: full strength for ten minutes, then a steady fade, and off the chart entirely an hour after the last report. The thresholds come from how AIS actually behaves — class A transmits every few seconds under way, class B every thirty — so ten minutes of silence already makes the position a guess, and an hour makes it a note that something was once there.
+
+The part worth getting right was what "keeps fading" means. Tying opacity to the live refresh would have looked fine in testing and failed in exactly the case that matters: when the feed drops, refreshes stop, and every ghost would have frozen at whatever opacity it had when the connection died — the chart's most confident-looking moment being the one where it knows least. The fade runs on its own thirty-second clock instead, adjusting markers in place and only rebuilding the layer when a vessel is old enough to leave. I tested it by blocking the live endpoint in the browser: with no server contact at all, the markers kept fading and the one sitting just under the hour mark disappeared on schedule.
+
+Disappearing from the chart is not the same as being forgotten. The vessel stays in search, keeps its tray card, and its "last report" counter goes on climbing, which is the honest arrangement: the chart shows where traffic is, and the lists remember what was there.
+
 ## 2026-09-06 — Where the rest of the memory was hiding
 
 The first pass fixed the two requests that could not possibly fit. Asked to go further, I stopped guessing and hammered one endpoint at a time while reading the process's own memory. That immediately corrected an assumption: under sustained load the resident set sat around 220 MB while V8's heap held 16 MB of live data and 77 MB of committed space. Two thirds of the footprint was not the JavaScript heap at all. It was SQLite — its page cache, its sort scratch, and its habit of keeping what it has allocated.

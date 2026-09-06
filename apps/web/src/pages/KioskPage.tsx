@@ -65,6 +65,31 @@ const VIEWPORT_DEBOUNCE_MS = 220;
 /** Approx card width + gap used to compute how many tray cards fit. */
 const TRAY_CARD_SLOT_PX = 168;
 
+/*
+ * A position is only as good as its age. AIS class A reports every few seconds and class B
+ * every 30, so anything past ten minutes is a guess about where the vessel is now, and an
+ * hour-old fix says nothing except that something was once there. Icons fade across that
+ * span and then leave the chart; the vessel stays in search and on its tray card, where the
+ * "last report" line says how old the fix is.
+ */
+const STALE_FADE_START_MS = 10 * 60_000;
+const STALE_HIDE_MS = 60 * 60_000;
+const STALE_MIN_OPACITY = 0.22;
+/** Fading spans fifty minutes, so re-checking twice a minute is smooth enough. */
+const STALE_TICK_MS = 30_000;
+
+function vesselAgeMs(v: VesselLiveState, nowMs: number): number {
+  return Math.max(0, nowMs - v.ts);
+}
+
+/** 1 while the fix is fresh, easing to {@link STALE_MIN_OPACITY}, then 0 once it is dropped. */
+function stalenessOpacity(ageMs: number): number {
+  if (ageMs <= STALE_FADE_START_MS) return 1;
+  if (ageMs >= STALE_HIDE_MS) return 0;
+  const through = (ageMs - STALE_FADE_START_MS) / (STALE_HIDE_MS - STALE_FADE_START_MS);
+  return 1 - through * (1 - STALE_MIN_OPACITY);
+}
+
 const TYPE_LEGEND: Array<{ color: string; label: string; club?: boolean }> = [
   { color: "#1f6f8b", label: "AHYC club", club: true },
   { color: "#ffffff", label: "Sailing" },
@@ -337,6 +362,9 @@ export function KioskPage() {
   const tracksRef = useRef<L.LayerGroup | null>(null);
   const userLayerRef = useRef<L.LayerGroup | null>(null);
   const liveVesselsRef = useRef<VesselLiveState[]>([]);
+  /** Markers currently on the chart, with the age of the fix each one was drawn from. */
+  const fadingMarkersRef = useRef<Array<{ ts: number; marker: L.Marker }>>([]);
+  const drawMarkersRef = useRef<(vessels: VesselLiveState[]) => void>(() => undefined);
   const liveModeRef = useRef(true);
   const sourceFilterRef = useRef<Record<AisSource, boolean>>({
     radio: true,
@@ -447,6 +475,7 @@ export function KioskPage() {
 
   sourceFilterRef.current = sourceFilter;
   categoryFilterRef.current = categoryFilter;
+  drawMarkersRef.current = drawMarkers;
   watchMmsisRef.current = watchMmsis;
   liveModeRef.current = live;
 
@@ -532,12 +561,17 @@ export function KioskPage() {
       icon,
       zIndexOffset: atRisk ? 900 : registered ? 500 : 0,
       riseOnHover: true,
+      opacity: stalenessOpacity(vesselAgeMs(v, Date.now())),
     });
     const label = v.name ?? v.mmsi;
     const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
     const sourceBit = AIS_SOURCE_LABELS[(v.source ?? "unknown") as AisSource];
+    const ageBit =
+      vesselAgeMs(v, Date.now()) > STALE_FADE_START_MS
+        ? ` · last report ${formatElapsedSince(v.ts, Date.now())}`
+        : "";
     marker.bindTooltip(
-      `${label} (${typeBit} · ${sourceBit})${v.sog != null ? ` · ${v.sog.toFixed(1)} kn` : ""}`,
+      `${label} (${typeBit} · ${sourceBit})${v.sog != null ? ` · ${v.sog.toFixed(1)} kn` : ""}${ageBit}`,
       { direction: "top", offset: [0, -10] },
     );
     marker.on("click", () => focusVessel(v));
@@ -545,7 +579,11 @@ export function KioskPage() {
   }
 
   function drawMarkers(vessels: VesselLiveState[]) {
-    setVesselCount(vessels.length);
+    const now = Date.now();
+    // Vessels whose last fix is old enough to be meaningless leave the chart, but stay in
+    // the list behind search and the tray cards.
+    const current = vessels.filter((v) => vesselAgeMs(v, now) < STALE_HIDE_MS);
+    setVesselCount(current.length);
     setLiveVessels(vessels);
     liveVesselsRef.current = vessels;
     const cluster = clusterRef.current;
@@ -554,7 +592,7 @@ export function KioskPage() {
     if (!cluster || !clubLayer) return;
 
     const filter = sourceFilterRef.current;
-    const visible = vessels.filter((v) => sourceAllowed(v, filter));
+    const visible = current.filter((v) => sourceAllowed(v, filter));
     const risk = collisionRiskMmsis(visible);
     alertMmsisRef.current = risk;
     setAlertMmsis(risk);
@@ -565,15 +603,18 @@ export function KioskPage() {
     const traffic: L.Layer[] = [];
     const catFilter = categoryFilterRef.current;
     const watched = watchMmsisRef.current;
-    for (const v of vessels) {
+    const drawn: Array<{ ts: number; marker: L.Marker }> = [];
+    for (const v of current) {
       if (!sourceAllowed(v, filter)) continue;
       if (!categoryAllowed(v, catFilter, watched)) continue;
       // Club boats outside the padded view still come from the API; skip drawing them until visible.
       if (v.registered && map && !inMapBounds(v, map) && v.mmsi !== selectedMmsi) continue;
       const marker = makeVesselMarker(v);
+      drawn.push({ ts: v.ts, marker });
       if (v.registered) clubLayer.addLayer(marker);
       else traffic.push(marker);
     }
+    fadingMarkersRef.current = drawn;
     if (traffic.length) {
       if ("addLayers" in cluster && typeof (cluster as L.MarkerClusterGroup).addLayers === "function") {
         (cluster as L.MarkerClusterGroup).addLayers(traffic);
@@ -582,6 +623,23 @@ export function KioskPage() {
       }
     }
   }
+
+  // A fix keeps ageing between refreshes, and refreshes stop entirely when the feed drops,
+  // so the fade runs on its own clock. Markers are only rebuilt when one is old enough to
+  // leave the chart, which is rare next to the every-few-seconds live refresh.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      let expired = false;
+      for (const { ts, marker } of fadingMarkersRef.current) {
+        const opacity = stalenessOpacity(Math.max(0, now - ts));
+        if (opacity === 0) expired = true;
+        else marker.setOpacity(opacity);
+      }
+      if (expired) drawMarkersRef.current(liveVesselsRef.current);
+    }, STALE_TICK_MS);
+    return () => window.clearInterval(id);
+  }, []);
 
   function fetchViewportLive() {
     const map = mapObj.current;
@@ -1172,8 +1230,10 @@ export function KioskPage() {
         const wantShort = zoom >= TRAIL_MIN_ZOOM;
         if (!wantShort) return;
 
+        const trailNow = Date.now();
         const trailCandidates = vessels
           .filter((v) => v.mmsi !== selectedMmsi)
+          .filter((v) => vesselAgeMs(v, trailNow) < STALE_HIDE_MS)
           .filter((v) => v.registered || inMapBounds(v, map))
           .slice(0, MAX_SHORT_TRAILS);
         if (trailCandidates.length === 0) return;
@@ -2376,6 +2436,7 @@ export function KioskPage() {
         <p className="ais-hint">
           AIS refreshes every 5 seconds for the visible map area. Far overview still clusters lightly; from bay scale in, every ship is drawn.
           Short trails appear when zoomed in; click or search for a {TRACK_HOURS}-hour track and details.
+          Icons fade once a vessel has been quiet for 10 minutes and leave the chart after an hour.
         </p>
         <input
           type="range"
@@ -2419,6 +2480,11 @@ export function KioskPage() {
                   <li>Tap a vessel (or search by name/MMSI) to select it, open details, and add a card to the tray.</li>
                   <li>
                     <strong>Last report</strong> on the detail pane (and tray cards) is a live counter of time since the latest AIS point for that vessel.
+                  </li>
+                  <li>
+                    Icons fade as their position goes stale — full strength for the first 10
+                    minutes, dimming until the vessel leaves the chart an hour after its last
+                    report. It stays searchable, and its card still shows how old the fix is.
                   </li>
                   <li>
                     The crosshair button in the top right snaps the chart to your own GPS
