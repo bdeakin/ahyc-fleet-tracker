@@ -1,5 +1,11 @@
 # Development narrative
 
+## 2026-09-06 — AIS shapes, tray along the ribbon, tighter CPA
+
+Markers now read like other AIS apps: circles when stopped, heading arrows when moving, with a pulsing red ring for CPA risk. Alerts fire when tracks pass within 0.1 nm in the next 12 minutes — including a mover closing on a stopped boat, but never two stopped vessels.
+
+The selection tray lives in the bottom filter row to the right of AIS source / Show, grows left-to-right, and sheds rightmost cards when there is not enough width. Zoom controls moved to the bottom-right above the status ribbon; the “local sailing grounds” line sits top-center so the type legend no longer covers it. Esri Ocean caps native zoom and overzooms instead of blank tiles, with an optional OpenSeaMap seamark overlay for buoys and lights without full NOAA clutter.
+
 ## 2026-09-06 — Watch list + tray + AISHub empty Atlantic region
 
 Operators needed long-lived tracks for boats that are not club registry members. The right-hand vessel pane can now add/remove a watch list entry; prune keeps those MMSIs forever alongside club boats. Filters next to AIS source let the kiosk show club / watch / other traffic independently.

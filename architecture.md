@@ -63,7 +63,7 @@ Kiosk checkboxes filter markers by source (Radio / AISHub / AISStream).
 
 ## Charts
 
-- Default operational basemap: Esri World Ocean Base + Ocean Reference (bathymetry shading and coastal/place labels without dense chart notation).
+- Default operational basemap: Esri World Ocean Base + Ocean Reference (bathymetry shading and coastal/place labels without dense chart notation). Native zoom capped (~z13) with Leaflet overzoom so blank “Map data not yet available” tiles are avoided; optional OpenSeaMap seamark overlay for buoys/lights.
 - Optional full NOAA Chart Display Service WMS (selectable in the kiosk).
 - Optional offline: MBTiles files in `data/charts`, served as XYZ with TMS→XYZ conversion (Pi).
 - `ChartLayer` kinds: `xyz` (one or more tile URL templates), `noaa-wms`, `mbtiles`.

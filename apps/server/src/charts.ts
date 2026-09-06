@@ -5,7 +5,10 @@ import type { ChartLayer } from "@ahyc/shared";
 import {
   ESRI_OCEAN_ATTRIBUTION,
   ESRI_OCEAN_BASE,
+  ESRI_OCEAN_MAX_NATIVE_ZOOM,
   ESRI_OCEAN_REFERENCE,
+  OPENSEAMAP_ATTRIBUTION,
+  OPENSEAMAP_SEAMARK,
 } from "@ahyc/shared";
 import { paths } from "./config.js";
 
@@ -22,7 +25,17 @@ export function listChartLayers(): ChartLayer[] {
       label: "Simplified ocean (depth + place names)",
       urls: [ESRI_OCEAN_BASE, ESRI_OCEAN_REFERENCE],
       attribution: ESRI_OCEAN_ATTRIBUTION,
-      maxZoom: 16,
+      maxZoom: 18,
+      maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM,
+    },
+    {
+      id: "ocean-seamarks",
+      kind: "xyz",
+      label: "Ocean + buoys / lights (OpenSeaMap)",
+      urls: [ESRI_OCEAN_BASE, ESRI_OCEAN_REFERENCE, OPENSEAMAP_SEAMARK],
+      attribution: `${ESRI_OCEAN_ATTRIBUTION} | ${OPENSEAMAP_ATTRIBUTION}`,
+      maxZoom: 18,
+      maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM,
     },
     { id: "noaa-wms", kind: "noaa-wms", label: "NOAA Chart Display (full WMS)" },
   ];

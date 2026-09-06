@@ -39,7 +39,8 @@ const MAX_SHORT_TRAILS = 50;
 const VIEWPORT_PAD = 0.2;
 const VIEWPORT_DEBOUNCE_MS = 220;
 /** Max vessel cards in the bottom tray (FIFO). */
-const TRAY_MAX = 8;
+/** Approx card width + gap used to compute how many tray cards fit. */
+const TRAY_CARD_SLOT_PX = 168;
 
 const TYPE_LEGEND: Array<{ color: string; label: string }> = [
   { color: "#1f6f8b", label: "AHYC club ★" },
@@ -153,6 +154,8 @@ export function KioskPage() {
     unknown: true,
   });
   const [trayMmsis, setTrayMmsis] = useState<string[]>([]);
+  const trayCapacityRef = useRef(1);
+  const trayMeasureRef = useRef<HTMLDivElement | null>(null);
   const [alertMmsis, setAlertMmsis] = useState<Set<string>>(() => new Set());
   const alertMmsisRef = useRef<Set<string>>(new Set());
   const [aishubStatus, setAishubStatus] = useState<AishubStatus | null>(null);
@@ -214,19 +217,47 @@ export function KioskPage() {
   function makeVesselMarker(v: VesselLiveState): L.Marker {
     const registered = Boolean(v.registered);
     const color = markerColor(v);
-    const size = registered ? 22 : 12;
     const atRisk = alertMmsisRef.current.has(v.mmsi);
-    const outlineClass = markerNeedsDarkOutline(color) ? " vessel-marker-dot--light" : "";
+    const sog = v.sog ?? 0;
+    const course =
+      v.heading != null && Number.isFinite(v.heading) && v.heading >= 0 && v.heading < 360
+        ? v.heading
+        : v.cog != null && Number.isFinite(v.cog) && v.cog >= 0 && v.cog < 360
+          ? v.cog
+          : null;
+    const moving = sog >= 0.5 && course != null;
+    const size = moving ? (registered ? 28 : 22) : registered ? 18 : 12;
+    const outlineStroke = markerNeedsDarkOutline(color) ? "#0f172a" : "#ffffff";
     const riskClass = atRisk ? " vessel-marker--alert" : "";
+    const shapeClass = moving ? " vessel-marker--moving" : " vessel-marker--stopped";
+    const pulse = atRisk
+      ? `<span class="vessel-marker-pulse" aria-hidden="true"></span>`
+      : "";
+    const star = registered
+      ? `<span class="vessel-marker-star" aria-hidden="true">★</span>`
+      : "";
+    // AIS-style shapes: circle when stopped; course arrow when moving (nose = heading/COG).
+    const shape = moving
+      ? `<svg class="vessel-marker-shape vessel-marker-arrow" viewBox="0 0 24 32" width="${size}" height="${Math.round(size * 1.25)}" style="transform:rotate(${course}deg)" aria-hidden="true">
+          <path d="M12 1.5 L22 28.5 L12 23.5 L2 28.5 Z" fill="${color}" stroke="${outlineStroke}" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>`
+      : `<svg class="vessel-marker-shape vessel-marker-circle" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="${color}" stroke="${outlineStroke}" stroke-width="2"/>
+        </svg>`;
     const icon = L.divIcon({
-      className: (registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic") + riskClass,
-      html: registered
-        ? `<span class="vessel-marker-star" aria-hidden="true">★</span><span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`
-        : `<span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
+      className:
+        (registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic") +
+        shapeClass +
+        riskClass,
+      html: `${pulse}${star}${shape}`,
+      iconSize: [size, moving ? Math.round(size * 1.25) : size],
+      iconAnchor: [size / 2, moving ? Math.round(size * 1.25) / 2 : size / 2],
     });
-    const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: atRisk ? 800 : registered ? 500 : 0 });
+    const marker = L.marker([v.lat, v.lon], {
+      icon,
+      zIndexOffset: atRisk ? 900 : registered ? 500 : 0,
+      riseOnHover: true,
+    });
     const label = v.name ?? v.mmsi;
     const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
     const sourceBit = AIS_SOURCE_LABELS[(v.source ?? "unknown") as AisSource];
@@ -344,7 +375,7 @@ export function KioskPage() {
       // (otherwise: "Map has no maxZoom specified" → blank kiosk).
       maxZoom: 18,
       minZoom: 3,
-      zoomControl: true,
+      zoomControl: false,
       attributionControl: true,
     });
     const clusterFactory = (L as unknown as { markerClusterGroup?: (opts?: object) => L.MarkerClusterGroup })
@@ -370,6 +401,7 @@ export function KioskPage() {
     clusterRef.current = cluster;
     clubLayerRef.current = clubLayer;
     mapObj.current = map;
+    L.control.zoom({ position: "bottomright" }).addTo(map);
     setMapZoom(map.getZoom());
 
     const onViewChange = () => {
@@ -406,6 +438,8 @@ export function KioskPage() {
       selected.urls.forEach((url, i) => {
         L.tileLayer(url, {
           maxZoom: selected.maxZoom ?? 18,
+          // Stretch last good tiles instead of fetching Esri's "Map data not yet available" blanks.
+          maxNativeZoom: selected.maxNativeZoom ?? selected.maxZoom ?? 18,
           attribution: i === 0 ? selected.attribution : "",
         }).addTo(group);
       });
@@ -629,9 +663,12 @@ export function KioskPage() {
     setTrackPointCount(0);
     trackFitKeyRef.current = null;
     setTrayMmsis((prev) => {
+      // Build left→right (oldest→newest). Drop oldest on the left when full.
       const next = prev.filter((m) => m !== v.mmsi);
       next.push(v.mmsi);
-      while (next.length > TRAY_MAX) next.shift();
+      const cap = Math.max(0, trayCapacityRef.current);
+      while (cap > 0 && next.length > cap) next.shift();
+      if (cap === 0) return [];
       return next;
     });
     if (!opts?.keepSearch) setSearchQuery("");
@@ -727,6 +764,27 @@ export function KioskPage() {
     }
   }
 
+
+  useEffect(() => {
+    const el = trayMeasureRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+
+    const applyCapacity = (width: number) => {
+      const cap = Math.max(0, Math.floor(width / TRAY_CARD_SLOT_PX));
+      trayCapacityRef.current = cap;
+      // Window got narrower — rightmost cards fall off.
+      setTrayMmsis((prev) => (prev.length > cap ? prev.slice(0, cap) : prev));
+    };
+
+    applyCapacity(el.clientWidth);
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.clientWidth;
+      applyCapacity(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   function removeTrayMmsi(mmsi: string) {
     setTrayMmsis((prev) => prev.filter((m) => m !== mmsi));
   }
@@ -735,8 +793,8 @@ export function KioskPage() {
     <div className="kiosk">
       <div className="kiosk-brand">
         <h1>Atlantic Highlands Yacht Club</h1>
-        <p>Local sailing grounds · club & harbor traffic</p>
       </div>
+      <p className="kiosk-tagline">Local sailing grounds · club & harbor traffic</p>
       <div className="kiosk-actions">
         <Link to="/adventures">Season adventures</Link>
         <Link to="/admin">Admin</Link>
@@ -769,6 +827,7 @@ export function KioskPage() {
                   label: "Simplified ocean (depth + place names)",
                   urls: [],
                   attribution: "",
+                  maxNativeZoom: 13,
                 },
               ]
           ).map((c) => (
@@ -820,10 +879,9 @@ export function KioskPage() {
             </label>
           ))}
         </aside>
-      </div>
-      {trayCards.length > 0 && (
+      <div className="vessel-tray-slot" ref={trayMeasureRef} aria-hidden={trayCards.length === 0}>
+        {trayCards.length > 0 && (
         <aside className="vessel-tray" aria-label="Selected vessels">
-          <div className="vessel-tray-title">Tracked vessels</div>
           <div className="vessel-tray-cards">
             {trayCards.map((v) => {
               const nm = distanceFromHomeNm(v.lat, v.lon);
@@ -859,6 +917,8 @@ export function KioskPage() {
           </div>
         </aside>
       )}
+      </div>
+      </div>
       <div className="vessel-search">
         <label className="vessel-search-label" htmlFor="vessel-search-input">
           Find vessel

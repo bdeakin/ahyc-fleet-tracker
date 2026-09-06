@@ -127,6 +127,8 @@ export type ChartLayer =
       urls: string[];
       attribution: string;
       maxZoom?: number;
+      /** Highest zoom with real tiles; Leaflet overzooms beyond this instead of fetching blanks. */
+      maxNativeZoom?: number;
     }
   | { id: string; kind: "mbtiles"; label: string; path: string };
 
@@ -142,6 +144,20 @@ export const ESRI_OCEAN_REFERENCE =
 
 export const ESRI_OCEAN_ATTRIBUTION =
   "Tiles &copy; Esri &mdash; Sources: GEBCO, NOAA, CHS, OSU, UNH, CSUMB, National Geographic, DeLorme, NAVTEQ, and Esri";
+
+/**
+ * Esri Ocean often only has real detail through ~z13; beyond that many coastal tiles
+ * are the grey "Map data not yet available" placeholder. Cap native zoom here and
+ * let Leaflet overzoom (stretch) those tiles at higher map zooms.
+ */
+export const ESRI_OCEAN_MAX_NATIVE_ZOOM = 13;
+
+/** OpenSeaMap seamark overlay — buoys, beacons, lights (no full chart clutter). */
+export const OPENSEAMAP_SEAMARK =
+  "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png";
+
+export const OPENSEAMAP_ATTRIBUTION =
+  "Seamarks &copy; <a href=\"https://www.openseamap.org\">OpenSeaMap</a> contributors";
 
 /**
  * Harbor traffic / Dispatcher ingest bbox:

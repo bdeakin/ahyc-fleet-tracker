@@ -1,5 +1,13 @@
 # Version history
 
+## 0.8.9 — AIS markers, tray layout, CPA, basemap overzoom
+
+- AIS markers: stopped vessels are circles; moving vessels are course arrows (heading/COG).
+- Collision alerts: pulsing red highlight; CPA ≤ 0.1 nm within 12 min for moving/moving or moving/stopped pairs.
+- Vessel tray sits to the right of AIS source / Show filters, fills left→right along the ribbon, and drops rightmost cards when the window shrinks.
+- Zoom +/- moved to bottom-right (above status ribbon); tagline centered at top so it clears the legend.
+- Esri Ocean overzooms past ~z13 instead of showing blank “Map data not yet available”; optional Ocean + OpenSeaMap buoys/lights layer.
+
 ## 0.8.8 — Watch list, vessel tray, AISHub region fix
 
 - Click any vessel and **Add to watch list** in the right pane — those MMSIs keep track history indefinitely (same as club boats).

@@ -184,10 +184,14 @@ export type CollisionRisk = {
   dcpaNm: number;
 };
 
-/** CPA thresholds: alert if closest approach < 0.25 nm within 12 minutes while closing. */
-const DCPA_ALERT_NM = 0.25;
+/**
+ * CPA ≤ 0.1 nm within 12 min when at least one vessel is moving:
+ * moving/moving tracks, or a moving track passing a stopped vessel.
+ * Two stopped vessels never alert.
+ */
+const DCPA_ALERT_NM = 0.1;
 const TCPA_ALERT_MIN = 12;
-const PROXIMITY_ALERT_NM = 0.12;
+const MIN_MOVING_SOG_KN = 0.5;
 
 function velNmPerMin(sogKn: number, cogDeg: number): { n: number; e: number } {
   const rad = (cogDeg * Math.PI) / 180;
@@ -202,9 +206,19 @@ function relativeNm(a: MotionFix, b: MotionFix): { n: number; e: number } {
   };
 }
 
+function isMoving(v: MotionFix): boolean {
+  const sog = v.sog ?? 0;
+  return sog >= MIN_MOVING_SOG_KN && v.cog != null && Number.isFinite(v.cog);
+}
+
+function velocityOf(v: MotionFix): { n: number; e: number } {
+  if (!isMoving(v)) return { n: 0, e: 0 };
+  return velNmPerMin(v.sog as number, v.cog as number);
+}
+
 /**
- * Returns MMSIs that currently have a collision risk with at least one other vessel.
- * Uses CPA when both have SOG/COG; otherwise falls back to close proximity.
+ * Returns MMSIs with a collision risk vs at least one other vessel.
+ * Requires ≥1 moving vessel; CPA ≤ 0.1 nm within TCPA_ALERT_MIN.
  */
 export function collisionRiskMmsis(vessels: MotionFix[]): Set<string> {
   const atRisk = new Set<string>();
@@ -213,41 +227,20 @@ export function collisionRiskMmsis(vessels: MotionFix[]): Set<string> {
     for (let j = i + 1; j < list.length; j++) {
       const a = list[i]!;
       const b = list[j]!;
+      const movingA = isMoving(a);
+      const movingB = isMoving(b);
+      if (!movingA && !movingB) continue;
+
       const dNow = haversineNm(a.lat, a.lon, b.lat, b.lon);
-      if (dNow > 3) continue; // far apart — skip
+      if (dNow > 3) continue;
 
-      const sogA = a.sog ?? 0;
-      const sogB = b.sog ?? 0;
-      const cogA = a.cog;
-      const cogB = b.cog;
-      const moving =
-        sogA >= 0.5 &&
-        sogB >= 0.5 &&
-        cogA != null &&
-        Number.isFinite(cogA) &&
-        cogB != null &&
-        Number.isFinite(cogB);
-
-      if (!moving) {
-        if (dNow <= PROXIMITY_ALERT_NM) {
-          atRisk.add(a.mmsi);
-          atRisk.add(b.mmsi);
-        }
-        continue;
-      }
-
-      const va = velNmPerMin(sogA, cogA as number);
-      const vb = velNmPerMin(sogB, cogB as number);
+      const va = velocityOf(a);
+      const vb = velocityOf(b);
       const dv = { n: vb.n - va.n, e: vb.e - va.e };
       const dp = relativeNm(a, b);
       const dv2 = dv.n * dv.n + dv.e * dv.e;
-      if (dv2 < 1e-10) {
-        if (dNow <= PROXIMITY_ALERT_NM) {
-          atRisk.add(a.mmsi);
-          atRisk.add(b.mmsi);
-        }
-        continue;
-      }
+      if (dv2 < 1e-10) continue;
+
       const tcpaMin = -(dp.n * dv.n + dp.e * dv.e) / dv2;
       if (tcpaMin < 0 || tcpaMin > TCPA_ALERT_MIN) continue;
       const cn = dp.n + dv.n * tcpaMin;
@@ -261,3 +254,4 @@ export function collisionRiskMmsis(vessels: MotionFix[]): Set<string> {
   }
   return atRisk;
 }
+
