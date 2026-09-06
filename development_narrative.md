@@ -1,5 +1,11 @@
 # Development narrative
 
+## 2026-09-06 — Flying the burgee
+
+The gold star over club boats was always a placeholder for the thing a club actually uses, so it is now the AHYC burgee. It is drawn rather than loaded: the flag reduces to a blue pennant, a white wedge opening from the middle of the hoist, and two stars at the hoist, which is a handful of SVG paths and stays crisp at any zoom or pixel density — and the club letters, which would be an illegible smudge at thirteen pixels, are simply left off. Geometry came from measuring the flag itself: sampling the artwork row by row put the wedge's apex at the middle of the hoist and showed its edges converging with the pennant's own edges at the fly, which is what makes the blue read as two tapering borders rather than a field with a triangle cut out of it.
+
+Leaflet's `divIcon` takes an HTML string and React does not, so the markup is built by one function and the kiosk wraps it for the legend, the search list, and the pane heading. The marker offset is computed per marker rather than fixed, since a moving club boat is a 28-pixel arrow and a stopped one is an 18-pixel circle, and the flag should clear both.
+
 ## 2026-09-06 — A phone is not a kiosk
 
 Everything on this map was laid out for a wall-mounted screen: a legend in one corner, filters in another, chart pickers along the bottom, a status ribbon under those. On a phone the panels covered the chart almost completely — the map was a few visible pixels between boxes. The fix is the usual one for small screens, two drawers that slide in from the edges with tabs at the bottom to open them, but the implementation detail worth recording is that the drawers wrap the existing panels and are `display: contents` above the breakpoint. The desktop kiosk therefore renders exactly the markup it always did, with the wrappers contributing nothing, and only inside the media query do they become fixed, scrolling panels that pull their children out of the corners and stack them in flow.

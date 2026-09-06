@@ -1,5 +1,9 @@
 # Version history
 
+## 0.9.4 — Club burgee
+
+- Club boats now fly the AHYC burgee instead of a gold star: a blue pennant with the white wedge and two hoist stars, drawn as an SVG (`apps/web/src/burgee.ts`) so it stays sharp at any zoom or pixel density. It sits clear above the marker whatever shape the marker is, and the same glyph marks club boats in the legend, the search results, and the detail pane heading.
+
 ## 0.9.3 — Phone layout, corrected chart georeferences
 
 - **Mobile layout**: on phones the panels now ride in two edge drawers ("Layers" and "Vessels") behind tabs at the bottom of the screen, so the chart owns the display instead of being buried. Tapping a ship opens its card; picking one from search closes the drawer and flies to it. The status ribbon folds to a single line (and can now be folded on the desktop kiosk too).

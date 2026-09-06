@@ -23,7 +23,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Forwarder: `deploy/ais-forwarder` with `AHYC_INGEST_URL` + `AIS_INGEST_TOKEN`
 - Railway: set matching `AIS_INGEST_TOKEN`; optional `TRAFFIC_RETENTION_HOURS`, `TRACK_MIN_INTERVAL_SEC`
 - Product rules: traffic 24h; registered MMSIs indefinite; live 10m trails when zoomed in; click/search vessel → detail pane with 24h / 7d / 30d track buttons
-- Markers color-coded by AIS ship type (sailing white, pleasure pink); club vessels keep registry color + star
+- Markers color-coded by AIS ship type (sailing white, pleasure pink); club vessels keep registry color and fly the AHYC burgee (blue pennant, white wedge, two stars) in the legend, search results, and detail pane
 - Kiosk search: type vessel name or MMSI to zoom and inspect (scoped to vessels loaded for the current view)
 - New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known
 - Default chart: **NOAA chart (paper style)** — ENC via the Maritime Chart Service with paper symbols, plain boundaries, four depth shades (12 / 30 / 60 ft), soundings in feet. Carto Voyager harbor layer (`CARTO_API_KEY` → keyed tiles) + OpenSeaMap seamarks (zoom ≥ 14 only), Esri Ocean regional overview, and the all-detail ENC display are the other options

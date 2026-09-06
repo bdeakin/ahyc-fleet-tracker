@@ -42,6 +42,7 @@ import {
   type VesselPhoto,
   type VesselProfile,
 } from "@ahyc/shared";
+import { burgeeSvg } from "../burgee";
 import { api, liveSocket, type AishubStatus, type TrackHistorySpan } from "../api";
 
 const HOURS = 48;
@@ -64,8 +65,8 @@ const VIEWPORT_DEBOUNCE_MS = 220;
 /** Approx card width + gap used to compute how many tray cards fit. */
 const TRAY_CARD_SLOT_PX = 168;
 
-const TYPE_LEGEND: Array<{ color: string; label: string }> = [
-  { color: "#1f6f8b", label: "AHYC club ★" },
+const TYPE_LEGEND: Array<{ color: string; label: string; burgee?: boolean }> = [
+  { color: "#1f6f8b", label: "AHYC club", burgee: true },
   { color: "#ffffff", label: "Sailing" },
   { color: "#ec4899", label: "Pleasure" },
   { color: "#65a30d", label: "Fishing" },
@@ -91,6 +92,19 @@ const TRAFFIC_CATEGORY_FILTERS: Array<{ id: TrafficCategory; label: string }> = 
   { id: "watch", label: "Watch list" },
   { id: "other", label: "All other traffic" },
 ];
+
+/** The club flag, drawn from the same markup the map markers use. */
+function BurgeeGlyph({ height }: { height: number }) {
+  return (
+    <span
+      className="burgee-glyph"
+      role="img"
+      aria-label="AHYC club boat"
+      title="AHYC club boat"
+      dangerouslySetInnerHTML={{ __html: burgeeSvg(height) }}
+    />
+  );
+}
 
 function markerColor(v: VesselLiveState): string {
   if (v.registered) return v.color ?? "#1f6f8b";
@@ -419,8 +433,10 @@ export function KioskPage() {
     const pulse = atRisk
       ? `<span class="vessel-marker-pulse" aria-hidden="true"></span>`
       : "";
-    const star = registered
-      ? `<span class="vessel-marker-star" aria-hidden="true">★</span>`
+    // Club boats fly the burgee clear above their marker, whatever shape it is.
+    const markerH = moving ? Math.round(size * 1.25) : size;
+    const burgee = registered
+      ? `<span class="vessel-marker-burgee" style="transform:translate(-50%,calc(-100% - ${Math.round(markerH / 2)}px))" aria-hidden="true">${burgeeSvg(13)}</span>`
       : "";
     // AIS-style shapes: circle when stopped; course arrow when moving (nose = heading/COG).
     const shape = moving
@@ -435,7 +451,7 @@ export function KioskPage() {
         (registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic") +
         shapeClass +
         riskClass,
-      html: `${pulse}${star}${shape}`,
+      html: `${pulse}${burgee}${shape}`,
       iconSize: [size, moving ? Math.round(size * 1.25) : size],
       iconAnchor: [size / 2, moving ? Math.round(size * 1.25) / 2 : size / 2],
     });
@@ -1739,6 +1755,7 @@ export function KioskPage() {
               style={{ background: item.color }}
             />
             <span>{item.label}</span>
+            {item.burgee && <BurgeeGlyph height={10} />}
           </div>
         ))}
       </aside>
@@ -1920,7 +1937,7 @@ export function KioskPage() {
                   />
                   <span className="vessel-search-name">{v.name || v.mmsi}</span>
                   <span className="vessel-search-meta">
-                    {v.registered ? "AHYC" : v.shipTypeLabel || "Traffic"}
+                    {v.registered ? <BurgeeGlyph height={9} /> : v.shipTypeLabel || "Traffic"}
                   </span>
                 </button>
               </li>
@@ -1934,7 +1951,10 @@ export function KioskPage() {
       {selectedVessel && (
         <aside className="vessel-pane" aria-live="polite">
           <header>
-            <h2>{selectedVessel.name || selectedVessel.mmsi}</h2>
+            <h2>
+              {selectedVessel.name || selectedVessel.mmsi}
+              {selectedVessel.registered && <BurgeeGlyph height={12} />}
+            </h2>
             <button type="button" className="vessel-pane-close" onClick={clearSelection} aria-label="Close">
               ×
             </button>
@@ -2207,7 +2227,7 @@ export function KioskPage() {
                   <li>
                     <strong>Last report</strong> on the detail pane (and tray cards) is a live counter of time since the latest AIS point for that vessel.
                   </li>
-                  <li>Club boats are starred; colors follow AIS ship type.</li>
+                  <li>Club boats fly the AHYC burgee; colors follow AIS ship type.</li>
                   <li>Use the chart picker for a sharp harbor map (coast + buoys), regional ocean depths, or full NOAA charts.</li>
                   <li>
                     When the view covers a charted area, a <strong>Historical chart</strong> menu appears — pick Dudley 1646 (eastern seaboard at regional zoom), or 1776 / 1845 / 1895 / 1910 harbor sheets to replace the modern basemap (choose <em>Modern map</em> to return).
