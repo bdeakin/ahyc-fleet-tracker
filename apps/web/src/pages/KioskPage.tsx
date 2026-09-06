@@ -79,6 +79,52 @@ const TYPE_LEGEND: Array<{ color: string; label: string; burgee?: boolean }> = [
   { color: "#6b7280", label: "Other" },
 ];
 
+/**
+ * Every track gets a hairline of near-black underneath it. A white sailing hull's trail is
+ * invisible over the pale shoals and land of a paper chart without one.
+ */
+const TRACK_CASING_COLOR = "#0b1622";
+const TRACK_CASING_EXTRA_PX = 1.6;
+
+/** Casing alone, for runs drawn as many differently-coloured segments. */
+function addTrackCasing(
+  group: L.LayerGroup,
+  track: Array<{ lat: number; lon: number }>,
+  weight: number,
+): void {
+  if (track.length < 2) return;
+  L.polyline(
+    track.map((p) => [p.lat, p.lon] as L.LatLngExpression),
+    {
+      color: TRACK_CASING_COLOR,
+      weight: weight + TRACK_CASING_EXTRA_PX,
+      opacity: 0.85,
+      interactive: false,
+      lineCap: "round",
+      lineJoin: "round",
+    },
+  ).addTo(group);
+}
+
+function drawTrack(
+  group: L.LayerGroup,
+  coords: L.LatLngExpression[],
+  options: L.PolylineOptions,
+): L.Polyline {
+  const weight = options.weight ?? 3;
+  L.polyline(coords, {
+    color: TRACK_CASING_COLOR,
+    weight: weight + TRACK_CASING_EXTRA_PX,
+    opacity: Math.min(0.85, (options.opacity ?? 1) * 0.9),
+    interactive: false,
+    lineCap: "round",
+    lineJoin: "round",
+  }).addTo(group);
+  const line = L.polyline(coords, { lineCap: "round", lineJoin: "round", ...options });
+  line.addTo(group);
+  return line;
+}
+
 const SOURCE_FILTERS: Array<{ id: AisSource; label: string }> = [
   { id: "radio", label: "Radio" },
   { id: "aishub", label: "AISHub" },
@@ -773,7 +819,7 @@ export function KioskPage() {
         .map((p) => [p.lat, p.lon] as L.LatLngExpression);
       trail.push([at.lat, at.lon]);
       if (trail.length > 1) {
-        L.polyline(trail, { color, weight: 3, opacity: 0.95 }).addTo(group);
+        drawTrack(group, trail, { color, weight: 3, opacity: 0.95 });
       }
       L.marker([at.lat, at.lon], {
         icon: L.divIcon({
@@ -810,7 +856,7 @@ export function KioskPage() {
       if (track.length === 0) return;
       const coords = track.map((p) => [p.lat, p.lon] as L.LatLngExpression);
       latlngs.push(...coords);
-      L.polyline(coords, { color, weight: 4, opacity: 0.9 }).bindTooltip(label).addTo(group);
+      drawTrack(group, coords, { color, weight: 4, opacity: 0.9 }).bindTooltip(label);
     };
 
     if (event.kind === "interception") {
@@ -838,6 +884,7 @@ export function KioskPage() {
         .addTo(group);
       latlngs.push([event.lat, event.lon]);
     } else if (event.kind === "speed") {
+      addTrackCasing(group, event.track, 5);
       for (let i = 1; i < event.track.length; i++) {
         const prev = event.track[i - 1]!;
         const cur = event.track[i]!;
@@ -875,6 +922,7 @@ export function KioskPage() {
       latlngs.push([event.lat, event.lon]);
     } else {
       // Speed-coloured segments make the run through the no-wake pocket obvious.
+      addTrackCasing(group, event.track, 5);
       for (let i = 1; i < event.track.length; i++) {
         const prev = event.track[i - 1]!;
         const cur = event.track[i]!;
@@ -1038,7 +1086,7 @@ export function KioskPage() {
           byMmsi.set(p.mmsi, arr);
         }
         for (const coords of byMmsi.values()) {
-          L.polyline(coords, { color: "#3d8b8b", weight: 3, opacity: 0.85 }).addTo(group);
+          drawTrack(group, coords, { color: "#3d8b8b", weight: 3, opacity: 0.85 });
         }
       })
       .catch(() => undefined);
@@ -1071,11 +1119,11 @@ export function KioskPage() {
           setTrackPointCount(longPoints.length);
           if (longPoints.length >= 2) {
             const coords = longPoints.map((p) => [p.lat, p.lon] as L.LatLngExpression);
-            L.polyline(coords, {
+            drawTrack(group, coords, {
               color: colorByMmsi.get(selectedMmsi) ?? "#c45c26",
               weight: 4,
               opacity: 0.92,
-            }).addTo(group);
+            });
             const fitKey = `${selectedMmsi}:${trackRangeHours}`;
             if (map && trackFitKeyRef.current !== fitKey) {
               trackFitKeyRef.current = fitKey;
@@ -1121,11 +1169,13 @@ export function KioskPage() {
 
         for (const [mmsi, coords] of byMmsi) {
           if (coords.length < 2) continue;
-          L.polyline(coords, {
+          drawTrack(group, coords, {
+            // Brighter than it used to be: the casing keeps a crowd of trails legible, so the
+            // hull colour inside it no longer has to be faint to stay out of the way.
             color: colorByMmsi.get(mmsi) ?? "#6b7280",
             weight: 2,
-            opacity: 0.55,
-          }).addTo(group);
+            opacity: 0.75,
+          });
         }
       } catch {
         /* ignore trail errors */

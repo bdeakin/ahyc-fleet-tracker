@@ -1,5 +1,9 @@
 # Version history
 
+## 0.9.5 — Track casings
+
+- Every track on the map — live trails, the selected vessel's history, replay tracks, and noteworthy event tracks — is now drawn over a hairline of near-black, so a white sailing hull's trail stays visible where it crosses land, shoals, and the pale paper of the NOAA chart. Speed-coloured runs get one casing under the whole run rather than one per segment. Short trails were brightened from 0.55 to 0.75 opacity now that the casing, not faintness, keeps a crowded harbour readable.
+
 ## 0.9.4 — Club burgee
 
 - Club boats now fly the AHYC burgee instead of a gold star: a blue pennant with the white wedge, two hoist stars, and the club letters in red, drawn as an SVG (`apps/web/src/burgee.ts`) so it stays sharp at any zoom or pixel density. It flies clear above the marker whatever shape the marker is, at 22 px so the red reads on an ordinary screen, and the same glyph marks club boats in the legend, the search results, and the detail pane heading.

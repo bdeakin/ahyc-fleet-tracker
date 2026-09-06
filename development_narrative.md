@@ -1,5 +1,11 @@
 # Development narrative
 
+## 2026-09-06 — A hairline of black under every track
+
+Sailing vessels are drawn white, which is right on open water and useless the moment a trail crosses land, a shoal, or the pale paper of the NOAA chart — the line simply vanishes. Cartographers solved this long ago with a casing: draw the line twice, a slightly wider dark one underneath and the coloured one on top, so the colour keeps its meaning and the edge does the work of separating it from whatever is behind it.
+
+Every track now goes through one `drawTrack` helper that lays a casing 1.6 px wider than the line beneath it, which covers live trails, the selected vessel's history, replay tracks, and noteworthy events alike. Runs that are coloured by speed are the exception: they are drawn as many short segments, so a per-segment casing would be both wasteful and visibly seamed, and they get a single casing under the whole run instead. The short trails were dimmed to 0.55 opacity back when nothing separated them from the chart and faintness was the only way to keep a crowded harbour from turning to soup; with an edge on them they can go back up to 0.75 and actually show their hull colour.
+
 ## 2026-09-06 — Flying the burgee
 
 The gold star over club boats was always a placeholder for the thing a club actually uses, so it is now the AHYC burgee. It is drawn rather than loaded: the flag reduces to a blue pennant, a white wedge opening from the middle of the hoist, and two stars at the hoist, which is a handful of SVG paths and stays crisp at any zoom or pixel density, with the club letters in red across the wedge. Geometry came from measuring the flag itself: sampling the artwork row by row put the wedge's apex at the middle of the hoist and showed its edges converging with the pennant's own edges at the fly, which is what makes the blue read as two tapering borders rather than a field with a triangle cut out of it. The same measurements explained the lettering, which is not set in one size: the letters share a width but each is taller than the last, so the word grows with the wedge and never spills onto the blue.
