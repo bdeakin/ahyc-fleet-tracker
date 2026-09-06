@@ -126,7 +126,7 @@ select {
 }
 
 /* Snap-to-my-position control, sat beside the help button. */
-.kiosk-locate-btn {
+.kiosk-actions .kiosk-locate-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -137,17 +137,17 @@ select {
   color: #f3efe7;
 }
 
-.kiosk-locate-btn:hover:not(:disabled) {
+.kiosk-actions .kiosk-locate-btn:hover:not(:disabled) {
   border-color: #5ec8ff;
   color: #5ec8ff;
 }
 
-.kiosk-locate-btn:disabled {
+.kiosk-actions .kiosk-locate-btn:disabled {
   cursor: progress;
   opacity: 0.75;
 }
 
-.kiosk-locate-btn.is-locating svg {
+.kiosk-actions .kiosk-locate-btn.is-locating svg {
   animation: locate-spin 1.4s linear infinite;
 }
 
@@ -967,6 +967,25 @@ select {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /*
+   * On a phone this is the one control that matters underway, and it is the only one being
+   * aimed at with a thumb: a full 44 px target in the accent colour so it does not read as
+   * another quiet header link.
+   */
+  .kiosk-actions .kiosk-locate-btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-color: rgba(94, 200, 255, 0.75);
+    background: rgba(94, 200, 255, 0.2);
+    color: #cdeeff;
+    box-shadow: 0 2px 10px rgba(2, 10, 16, 0.5);
+  }
+
+  .kiosk-actions .kiosk-locate-btn svg {
+    width: 24px;
+    height: 24px;
   }
 
   .kiosk-locate-msg {

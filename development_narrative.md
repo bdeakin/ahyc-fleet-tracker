@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-09-06 — The button that was never wearing its own clothes
+
+Making the locate button bigger on phones turned up the same CSS trap as the location read-out: the rule was written as `.kiosk-locate-btn`, but the header styles it against are `.kiosk-actions button`, which is the more specific selector and wins no matter which comes later in the file. So the round shape, the accent colour, and the fill it asked for had never rendered — only the size, which nothing else was setting. Scoped as `.kiosk-actions .kiosk-locate-btn` it applies, and on a phone it becomes a 44 px accent-blue circle: a full thumb target, and the only control in the header that does not look like a quiet link. That is the right emphasis, because on a phone it is the one thing you press underway.
+
 ## 2026-09-06 — Reading a crash that was mostly a shutdown
 
 The deploy log ended with `npm error signal SIGTERM`, `npm error command failed`, and `Stopping Container`. That is not a stack trace, it is npm complaining about being killed — and that turned out to be the useful part. The entrypoint was `npm run start`, which spawns a shell, which spawns npm again, which spawns node. SIGTERM lands on npm, node never hears it, and npm exits non-zero. To a platform with an ON_FAILURE restart policy, every ordinary stop therefore looks like a crash. The container now runs `node apps/server/dist/index.js` directly and handles SIGTERM itself: stop the AIS workers, close Fastify, close SQLite so the write-ahead log is checkpointed onto the volume rather than recovered on the next boot, and exit zero, with a timer to guarantee the process is gone inside the grace period regardless.

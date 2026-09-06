@@ -1,5 +1,9 @@
 # Version history
 
+## 0.9.10 — Bigger locate button on phones
+
+- The GPS crosshair is a 44 px accent-blue circle on phones — a full thumb target and the most prominent control in the header, where before it was a 32 px icon indistinguishable from the help and admin links. Its styling had also been losing to `.kiosk-actions button`, a more specific selector, so the round shape and colour it was asking for never rendered anywhere.
+
 ## 0.9.9 — Deploy hardening
 
 - The container now runs `node` directly instead of `npm run start`. npm does not pass SIGTERM to the server and exits non-zero when the platform stops the container, which is what the deploy log showed (`npm error signal SIGTERM`, `command failed`) and what an ON_FAILURE restart policy reads as a crash.
