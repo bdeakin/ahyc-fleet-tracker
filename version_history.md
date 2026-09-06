@@ -2,7 +2,7 @@
 
 ## 0.9.4 — Club burgee
 
-- Club boats now fly the AHYC burgee instead of a gold star: a blue pennant with the white wedge and two hoist stars, drawn as an SVG (`apps/web/src/burgee.ts`) so it stays sharp at any zoom or pixel density. It sits clear above the marker whatever shape the marker is, and the same glyph marks club boats in the legend, the search results, and the detail pane heading.
+- Club boats now fly the AHYC burgee instead of a gold star: a blue pennant with the white wedge, two hoist stars, and the club letters in red, drawn as an SVG (`apps/web/src/burgee.ts`) so it stays sharp at any zoom or pixel density. It flies clear above the marker whatever shape the marker is, at 22 px so the red reads on an ordinary screen, and the same glyph marks club boats in the legend, the search results, and the detail pane heading.
 
 ## 0.9.3 — Phone layout, corrected chart georeferences
 

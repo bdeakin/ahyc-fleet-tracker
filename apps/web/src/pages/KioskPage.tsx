@@ -436,7 +436,7 @@ export function KioskPage() {
     // Club boats fly the burgee clear above their marker, whatever shape it is.
     const markerH = moving ? Math.round(size * 1.25) : size;
     const burgee = registered
-      ? `<span class="vessel-marker-burgee" style="transform:translate(-50%,calc(-100% - ${Math.round(markerH / 2)}px))" aria-hidden="true">${burgeeSvg(13)}</span>`
+      ? `<span class="vessel-marker-burgee" style="transform:translate(-50%,calc(-100% - ${Math.round(markerH / 2)}px))" aria-hidden="true">${burgeeSvg(22)}</span>`
       : "";
     // AIS-style shapes: circle when stopped; course arrow when moving (nose = heading/COG).
     const shape = moving
@@ -1755,7 +1755,7 @@ export function KioskPage() {
               style={{ background: item.color }}
             />
             <span>{item.label}</span>
-            {item.burgee && <BurgeeGlyph height={10} />}
+            {item.burgee && <BurgeeGlyph height={18} />}
           </div>
         ))}
       </aside>
@@ -1937,7 +1937,7 @@ export function KioskPage() {
                   />
                   <span className="vessel-search-name">{v.name || v.mmsi}</span>
                   <span className="vessel-search-meta">
-                    {v.registered ? <BurgeeGlyph height={9} /> : v.shipTypeLabel || "Traffic"}
+                    {v.registered ? <BurgeeGlyph height={16} /> : v.shipTypeLabel || "Traffic"}
                   </span>
                 </button>
               </li>
@@ -1953,7 +1953,7 @@ export function KioskPage() {
           <header>
             <h2>
               {selectedVessel.name || selectedVessel.mmsi}
-              {selectedVessel.registered && <BurgeeGlyph height={12} />}
+              {selectedVessel.registered && <BurgeeGlyph height={18} />}
             </h2>
             <button type="button" className="vessel-pane-close" onClick={clearSelection} aria-label="Close">
               ×
