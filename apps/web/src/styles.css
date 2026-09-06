@@ -610,6 +610,10 @@ select {
     font-size: 0.7rem;
   }
 
+  .source-filter {
+    bottom: 10.5rem;
+  }
+
   .vessel-search,
   .vessel-pane {
     right: 1rem;
@@ -627,9 +631,10 @@ select {
 
 .source-filter {
   position: absolute;
-  z-index: 1000;
+  z-index: 1001;
   left: 1rem;
-  bottom: 5.5rem;
+  /* Sit above the Live / timeline banner (incl. AIS hint lines). */
+  bottom: 9.5rem;
   display: grid;
   gap: 0.28rem;
   padding: 0.55rem 0.7rem;

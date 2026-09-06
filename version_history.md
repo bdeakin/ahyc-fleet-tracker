@@ -1,5 +1,11 @@
 # Version history
 
+## 0.8.6 — AIS source panel clear of banner; lighter clustering
+
+- Raise the AIS source checkbox panel above the Live timeline banner.
+- Disable marker clustering from zoom 9 (bay scale) upward so ships stay individual at harbor overview.
+
+
 ## 0.8.5 — Fix blank kiosk (Leaflet maxZoom)
 
 - Leaflet.markercluster was throwing `Map has no maxZoom specified` because `disableClusteringAtZoom` was set without `maxZoom` on the map — leaving `#root` empty.

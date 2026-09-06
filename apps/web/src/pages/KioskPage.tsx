@@ -21,8 +21,8 @@ import { api, liveSocket } from "../api";
 const HOURS = 48;
 const TRACK_HOURS = 24;
 const DEFAULT_TRAIL_MINUTES = 10;
-/** Individual markers below this zoom; clusters above. */
-const CLUSTER_DISABLE_ZOOM = 13;
+/** Individual markers at this zoom and closer (harbor/bay overview ≈ 9). */
+const CLUSTER_DISABLE_ZOOM = 9;
 /** Short trails only when zoomed in enough (and for selected / club). */
 const TRAIL_MIN_ZOOM = 11;
 const MAX_SHORT_TRAILS = 50;
@@ -269,7 +269,8 @@ export function KioskPage() {
       .markerClusterGroup;
     const clusterOpts = {
       showCoverageOnHover: false,
-      maxClusterRadius: (zoom: number) => (zoom < 8 ? 90 : zoom < 11 ? 60 : 45),
+      // Keep clusters small when zoomed out; at zoom ≥ 10 show every ship.
+      maxClusterRadius: (zoom: number) => (zoom < 7 ? 55 : zoom < 9 ? 32 : 18),
       disableClusteringAtZoom: CLUSTER_DISABLE_ZOOM,
       spiderfyOnMaxZoom: true,
       chunkedLoading: true,
@@ -767,7 +768,7 @@ export function KioskPage() {
         </label>
         {aisHint && <p className="ais-hint">{aisHint}</p>}
         <p className="ais-hint">
-          AIS refreshes every 5 seconds for the visible map area. Zoomed out, traffic clusters; club boats stay individual.
+          AIS refreshes every 5 seconds for the visible map area. Far overview still clusters lightly; from bay scale in, every ship is drawn.
           Short trails appear when zoomed in; click or search for a {TRACK_HOURS}-hour track and details.
         </p>
         <input

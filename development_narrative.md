@@ -1,5 +1,10 @@
 # Development narrative
 
+## 2026-09-06 — Source filter vs Live banner; less clustering
+
+The AIS source panel sat under the Live status/timeline strip. Moved it above that banner. Clustering was still on at bay-overview zoom (~10), which hid individual ships behind large counts — disable clustering from zoom 9 up and tighten cluster radius when still zoomed further out.
+
+
 ## 2026-09-06 — Blank page after clustering deploy
 
 Production HTML and `/assets/*.js` loaded, but React left `#root` empty. Playwright caught `Map has no maxZoom specified` from leaflet.markercluster when `disableClusteringAtZoom` was used without a map `maxZoom`. Fixed by setting `maxZoom: 18` on map init and adding a small ErrorBoundary so future map failures show a message instead of a white screen. AISStream `1006` reconnects are separate (API key / upstream) and no longer hide the UI.
