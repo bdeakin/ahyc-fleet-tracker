@@ -1,5 +1,9 @@
 # Version history
 
+## 0.9.8 — Snap to my location
+
+- A crosshair button beside the help button puts the viewer on the chart: one GPS fix per press, a blue dot inside its accuracy circle, and the chart flown to it without ever zooming out from a closer view. The read-out gives the accuracy in metres and the distance from the club, and blocked, timed-out, insecure-context, and no-geolocation cases each say what happened rather than failing silently.
+
 ## 0.9.7 — Burgee moves to the cards
 
 - The burgee no longer flies over club markers on the chart; the banded marker carries the identification there. It now appears on the vessel cards instead: the bottom tray card, the detail pane heading, and the search results. The legend shows the club roundel on its own, since that is what the chart actually draws.

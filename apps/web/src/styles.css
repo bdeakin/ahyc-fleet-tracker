@@ -125,6 +125,68 @@ select {
   backdrop-filter: blur(8px);
 }
 
+/* Snap-to-my-position control, sat beside the help button. */
+.kiosk-locate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 999px;
+  color: #f3efe7;
+}
+
+.kiosk-locate-btn:hover:not(:disabled) {
+  border-color: #5ec8ff;
+  color: #5ec8ff;
+}
+
+.kiosk-locate-btn:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+.kiosk-locate-btn.is-locating svg {
+  animation: locate-spin 1.4s linear infinite;
+}
+
+@keyframes locate-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.kiosk-locate-msg {
+  position: absolute;
+  /* Centred under the tagline: the top-right corner is already the search panel's. */
+  z-index: 1600;
+  top: 3.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(22rem, calc(100vw - 2rem));
+  text-align: center;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.35rem;
+  background: var(--panel);
+  border: 1px solid rgba(176, 141, 87, 0.35);
+  color: var(--foam);
+  font-size: 0.72rem;
+  backdrop-filter: blur(8px);
+}
+
+/* The viewer's own fix: a bright dot inside the accuracy circle Leaflet draws under it. */
+.user-location-dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 2px;
+  border-radius: 50%;
+  background: #5ec8ff;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(11, 22, 34, 0.8);
+}
+
 .timeline {
   position: absolute;
   z-index: 1000;
@@ -905,6 +967,12 @@ select {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .kiosk-locate-msg {
+    top: auto;
+    bottom: calc(var(--ribbon-h, 2.6rem) + 3.4rem);
+    font-size: 0.68rem;
   }
 
   /* Attribution is a full sentence of chart credits; keep it to one quiet line. */

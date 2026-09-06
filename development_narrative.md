@@ -1,5 +1,13 @@
 # Development narrative
 
+## 2026-09-06 — Putting the viewer on the chart
+
+The kiosk has always centred on the club, which is right for the screen on the wall and wrong for the phone in your pocket at the end of the dock. A crosshair button now takes one GPS fix per press and flies the chart to it, marking the spot with a blue dot inside a circle the size of the reported accuracy — worth drawing, because a 300-metre fix and a 5-metre fix mean very different things and a bare dot claims the latter. The fly-to takes the greater of the current zoom and fifteen, so pressing it while studying a berth does not throw the view back out to bay scale.
+
+A single fix rather than a running watch: a live watch is a battery drain on a phone that spends the afternoon in a pocket, and someone standing on the dock needs to be put on the map once. Every failure mode says what happened — permission blocked, no fix yet, an insecure connection, or a browser with no location service at all — because a button that silently does nothing is worse than no button.
+
+Placing the read-out took two tries. It first sat under the header on the right, where the vessel search panel already lives, so it landed behind it. Centred under the tagline is clear on a desktop, and on a phone it moves to just above the status ribbon. The mobile override also had to move: it was written into the phone media query, which sits earlier in the stylesheet than the rule it was overriding, so the desktop `top` and the phone `bottom` both applied and stretched the little toast into a slab covering half the screen.
+
 ## 2026-09-06 — Club colours on the club boats
 
 The burgee identifies a club boat, but it flies above the marker and at bay-wide zoom the marker is what the eye lands on first. So the marker itself now wears the flag's colours banded out from the centre: red core, white around it, blue outside. Both marker shapes are built the same way, by drawing the shape three times and scaling each copy about its own centre — a roundel when the boat is stopped, the same course arrow in three nested bands when it is moving — which keeps the bands parallel to the outline without hand-drawing an inner chevron.

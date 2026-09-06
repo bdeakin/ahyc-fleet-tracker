@@ -335,6 +335,7 @@ export function KioskPage() {
   const clusterRef = useRef<L.MarkerClusterGroup | L.LayerGroup | null>(null);
   const clubLayerRef = useRef<L.LayerGroup | null>(null);
   const tracksRef = useRef<L.LayerGroup | null>(null);
+  const userLayerRef = useRef<L.LayerGroup | null>(null);
   const liveVesselsRef = useRef<VesselLiveState[]>([]);
   const liveModeRef = useRef(true);
   const sourceFilterRef = useRef<Record<AisSource, boolean>>({
@@ -383,6 +384,8 @@ export function KioskPage() {
   const [dragMmsi, setDragMmsi] = useState<string | null>(null);
   const [dropTargetMmsi, setDropTargetMmsi] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locateMsg, setLocateMsg] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"layers" | "vessels" | null>(null);
   // Status lines are useful on a kiosk screen but eat a phone screen, so start folded there.
   const [ribbonOpen, setRibbonOpen] = useState(
@@ -1297,6 +1300,79 @@ export function KioskPage() {
     };
   }, [selectedMmsi]);
 
+  /**
+   * Snap the chart to the viewer's own position. One fix per press rather than a running
+   * watch: on a phone in a pocket a live watch drains the battery, and someone standing on
+   * the club dock only needs to be put on the map once.
+   */
+  useEffect(() => {
+    if (!locateMsg) return;
+    const id = window.setTimeout(() => setLocateMsg(null), 9000);
+    return () => window.clearTimeout(id);
+  }, [locateMsg]);
+
+  function locateMe() {
+    const map = mapObj.current;
+    if (!map) return;
+    if (!("geolocation" in navigator)) {
+      setLocateMsg("This browser has no location service.");
+      return;
+    }
+    if (!window.isSecureContext) {
+      setLocateMsg("Location needs a secure (https) connection.");
+      return;
+    }
+    setLocating(true);
+    setLocateMsg(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        const { latitude, longitude, accuracy } = pos.coords;
+        const layer = userLayerRef.current ?? L.layerGroup().addTo(map);
+        userLayerRef.current = layer;
+        layer.clearLayers();
+        const away = distanceFromHomeNm(latitude, longitude);
+        const label = `You are here · ±${Math.round(accuracy)} m · ${formatNm(away)} from the club`;
+        if (accuracy > 0) {
+          L.circle([latitude, longitude], {
+            radius: accuracy,
+            color: "#5ec8ff",
+            weight: 1,
+            opacity: 0.8,
+            fillColor: "#5ec8ff",
+            fillOpacity: 0.12,
+            interactive: false,
+          }).addTo(layer);
+        }
+        L.marker([latitude, longitude], {
+          icon: L.divIcon({
+            className: "user-location",
+            html: `<span class="user-location-dot" aria-hidden="true"></span>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+          }),
+          zIndexOffset: 1500,
+        })
+          .bindTooltip(label, { direction: "top", offset: [0, -10] })
+          .addTo(layer);
+        // Close enough to see the harbor, but never zoom out from a closer view.
+        map.flyTo([latitude, longitude], Math.max(map.getZoom(), 15), { duration: 0.9 });
+        setLocateMsg(label);
+      },
+      (err) => {
+        setLocating(false);
+        setLocateMsg(
+          err.code === err.PERMISSION_DENIED
+            ? "Location blocked — allow it for this site in your browser."
+            : err.code === err.TIMEOUT
+              ? "No fix yet. Try again with a clearer view of the sky."
+              : "Could not get a location fix.",
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },
+    );
+  }
+
   function clearSelection() {
     setSelectedMmsi(null);
     setSelectedLabel(null);
@@ -1692,6 +1768,25 @@ export function KioskPage() {
         >
           ?
         </button>
+        <button
+          type="button"
+          className={`kiosk-locate-btn${locating ? " is-locating" : ""}`}
+          aria-label="Snap the chart to my GPS location"
+          title="Snap to my location"
+          onClick={locateMe}
+          disabled={locating}
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.2" fill="currentColor" />
+            <circle cx="12" cy="12" r="7.6" fill="none" stroke="currentColor" strokeWidth="1.6" />
+            <path
+              d="M12 1.2 V5 M12 19 V22.8 M1.2 12 H5 M19 12 H22.8"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
         <Link to="/admin">Admin</Link>
         {!live && (
           <button
@@ -1711,6 +1806,11 @@ export function KioskPage() {
           </button>
         )}
       </div>
+      {(locating || locateMsg) && (
+        <div className="kiosk-locate-msg" role="status">
+          {locating ? "Finding you…" : locateMsg}
+        </div>
+      )}
       {/* Phone layout: the panels ride in drawers so the chart is not buried under them. */}
       <div className="mobile-tabs">
         <button
@@ -2305,6 +2405,10 @@ export function KioskPage() {
                   <li>Tap a vessel (or search by name/MMSI) to select it, open details, and add a card to the tray.</li>
                   <li>
                     <strong>Last report</strong> on the detail pane (and tray cards) is a live counter of time since the latest AIS point for that vessel.
+                  </li>
+                  <li>
+                    The crosshair button in the top right snaps the chart to your own GPS
+                    position and marks it with its accuracy.
                   </li>
                   <li>
                     Club boats are drawn in the club colors — red, white, blue — and their cards
