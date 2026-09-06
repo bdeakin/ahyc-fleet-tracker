@@ -50,7 +50,7 @@ Kiosk checkboxes filter markers by source (Radio / AISHub / AISStream).
 5. Optional AISHub worker tags ingest `source=aishub`; AISStream tags `source=aisstream`.
 6. Retention: non-registered traffic pruned after `TRAFFIC_RETENTION_HOURS` (default 24h); registered club MMSIs kept indefinitely.
 7. First sight of an MMSI queues a public profile scrape (VesselFinder → MyShipTracking fallback); results persist in `vessel_profiles` and are shown in the kiosk detail pane.
-8. Kiosk colors traffic markers by AIS ship type or scraped class label (club vessels keep registry colors and show a ★); live view loads AIS for the current map area, clusters when zoomed out, and draws short trails when zoomed in; click or search a vessel to zoom, open a detail pane, and draw a 24h track.
+8. Kiosk colors traffic markers by AIS ship type or scraped class label (club vessels keep registry colors and show a ★); live view loads AIS for the current map area, clusters when zoomed out, and draws short trails when zoomed in; click or search a vessel to zoom, open a detail pane, and choose a 24h / 7d / 30d track from stored history.
 9. Timeline scrubbing uses `/api/tracks` and `/api/tracks/replay`.
 10. Adventures recomputes trips for a vessel/season, builds prose, and returns track geometries for the stylized map.
 

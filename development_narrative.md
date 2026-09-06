@@ -1,5 +1,10 @@
 # Development narrative
 
+## 2026-09-06 — Track range buttons on the vessel pane
+
+Operators wanted more than the default 24h track when inspecting a boat. The detail pane now offers 24h / 7d / 30d buttons under the vessel name and plots whatever history SQLite still has for that MMSI (club boats keep longer history; harbor traffic may only retain ~24h).
+
+
 ## 2026-09-06 — Source filter vs Live banner; less clustering
 
 The AIS source panel sat under the Live status/timeline strip. Moved it above that banner. Clustering was still on at bay-overview zoom (~10), which hid individual ships behind large counts — disable clustering from zoom 9 up and tighten cluster radius when still zoomed further out.

@@ -19,7 +19,7 @@ COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
 COPY apps/web ./apps/web
 
-ARG CACHE_BUST=0.8.6-ui
+ARG CACHE_BUST=0.8.7-tracks
 RUN npm run build
 
 # Prune devDependencies after build (keep production deps + native modules)

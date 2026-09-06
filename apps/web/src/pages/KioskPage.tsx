@@ -21,6 +21,12 @@ import { api, liveSocket } from "../api";
 const HOURS = 48;
 const TRACK_HOURS = 24;
 const DEFAULT_TRAIL_MINUTES = 10;
+/** Track window options for the selected vessel (hours). */
+const TRACK_RANGE_OPTIONS: Array<{ hours: number; label: string }> = [
+  { hours: 24, label: "24h" },
+  { hours: 24 * 7, label: "7d" },
+  { hours: 24 * 30, label: "30d" },
+];
 /** Individual markers at this zoom and closer (harbor/bay overview ≈ 9). */
 const CLUSTER_DISABLE_ZOOM = 9;
 /** Short trails only when zoomed in enough (and for selected / club). */
@@ -96,6 +102,7 @@ export function KioskPage() {
   });
   const viewportTimerRef = useRef<number | null>(null);
   const viewportReqRef = useRef(0);
+  const trackFitKeyRef = useRef<string | null>(null);
 
   const [charts, setCharts] = useState<ChartLayer[]>([]);
   const [chartId, setChartId] = useState("ocean-simple");
@@ -107,6 +114,8 @@ export function KioskPage() {
   const [liveVessels, setLiveVessels] = useState<VesselLiveState[]>([]);
   const [selectedMmsi, setSelectedMmsi] = useState<string | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [trackRangeHours, setTrackRangeHours] = useState(TRACK_HOURS);
+  const [trackPointCount, setTrackPointCount] = useState(0);
   const [vesselProfile, setVesselProfile] = useState<VesselProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [mapZoom, setMapZoom] = useState(12);
@@ -397,7 +406,7 @@ export function KioskPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, scrubTs, windowStart]);
 
-  // Live mode: short trails for nearby vessels when zoomed in; selected vessel gets 24h.
+  // Live mode: short trails for nearby vessels when zoomed in; selected vessel uses chosen range.
   useEffect(() => {
     if (!live) return;
     let cancelled = false;
@@ -409,7 +418,7 @@ export function KioskPage() {
       const vessels = liveVesselsRef.current.filter((v) => sourceAllowed(v, sourceFilterRef.current));
       const to = Date.now();
       const shortFrom = to - DEFAULT_TRAIL_MINUTES * 60_000;
-      const longFrom = to - TRACK_HOURS * 3600_000;
+      const longFrom = to - trackRangeHours * 3600_000;
       const zoom = map?.getZoom() ?? 0;
 
       const colorByMmsi = new Map(vessels.map((v) => [v.mmsi, markerColor(v)]));
@@ -420,6 +429,7 @@ export function KioskPage() {
         if (selectedMmsi) {
           const longPoints = await api.tracks(longFrom, to, selectedMmsi);
           if (cancelled) return;
+          setTrackPointCount(longPoints.length);
           if (longPoints.length >= 2) {
             const coords = longPoints.map((p) => [p.lat, p.lon] as L.LatLngExpression);
             L.polyline(coords, {
@@ -427,7 +437,22 @@ export function KioskPage() {
               weight: 4,
               opacity: 0.92,
             }).addTo(group);
+            const fitKey = `${selectedMmsi}:${trackRangeHours}`;
+            if (map && trackFitKeyRef.current !== fitKey) {
+              trackFitKeyRef.current = fitKey;
+              try {
+                map.fitBounds(L.latLngBounds(coords as L.LatLngTuple[]), {
+                  padding: [48, 48],
+                  maxZoom: 14,
+                  animate: true,
+                });
+              } catch {
+                /* ignore fit errors */
+              }
+            }
           }
+        } else if (!cancelled) {
+          setTrackPointCount(0);
         }
 
         const wantShort = zoom >= TRAIL_MIN_ZOOM;
@@ -474,7 +499,7 @@ export function KioskPage() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [live, selectedMmsi, rangeEnd, vesselCount, mapZoom]);
+  }, [live, selectedMmsi, trackRangeHours, rangeEnd, vesselCount, mapZoom]);
 
   useEffect(() => {
     if (!selectedMmsi) {
@@ -518,12 +543,18 @@ export function KioskPage() {
     setSelectedLabel(null);
     setSearchQuery("");
     setVesselProfile(null);
+    setTrackRangeHours(TRACK_HOURS);
+    setTrackPointCount(0);
+    trackFitKeyRef.current = null;
   }
 
   function focusVessel(v: VesselLiveState, opts?: { keepSearch?: boolean }) {
     const label = v.name ?? v.mmsi;
     setSelectedMmsi(v.mmsi);
     setSelectedLabel(label);
+    setTrackRangeHours(TRACK_HOURS);
+    setTrackPointCount(0);
+    trackFitKeyRef.current = null;
     if (!opts?.keepSearch) setSearchQuery("");
     if (!live) {
       setLive(true);
@@ -656,6 +687,23 @@ export function KioskPage() {
               ×
             </button>
           </header>
+          <div className="track-range" role="group" aria-label="Track history range">
+            {TRACK_RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.hours}
+                type="button"
+                className={trackRangeHours === opt.hours ? "track-range-btn active" : "track-range-btn"}
+                onClick={() => setTrackRangeHours(opt.hours)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="track-range-meta">
+            {trackPointCount > 0
+              ? `Showing stored track · ${trackPointCount} point${trackPointCount === 1 ? "" : "s"}`
+              : "No stored track points in this window"}
+          </p>
           <dl>
             <div>
               <dt>MMSI</dt>
@@ -689,7 +737,7 @@ export function KioskPage() {
             </div>
             <div>
               <dt>Track</dt>
-              <dd>Last {TRACK_HOURS} hours</dd>
+              <dd>Last {trackRangeHours >= 24 ? `${trackRangeHours / 24} day${trackRangeHours / 24 === 1 ? "" : "s"}` : `${trackRangeHours} hours`}</dd>
             </div>
             {vesselProfile?.status === "pending" && (
               <div>
@@ -762,7 +810,7 @@ export function KioskPage() {
           <span>
             {live ? "Live" : "Replay"}
             {vesselCount ? ` · ${vesselCount} in view` : ""}
-            {selectedMmsi ? ` · track ${TRACK_HOURS}h` : trailsNote}
+            {selectedMmsi ? ` · track ${trackRangeHours >= 24 && trackRangeHours % 24 === 0 ? `${trackRangeHours / 24}d` : `${trackRangeHours}h`}` : trailsNote}
           </span>
           <span>{new Date(scrubTs).toLocaleString()}</span>
         </label>

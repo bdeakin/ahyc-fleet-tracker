@@ -1,5 +1,11 @@
 # Version history
 
+## 0.8.7 — Selectable vessel track windows (24h / 7d / 30d)
+
+- Vessel detail pane adds **24h / 7d / 30d** track buttons under the name; the map draws whatever points are stored for that window.
+- Also raises AIS source filters above the Live banner and eases clustering from zoom 9.
+
+
 ## 0.8.6 — AIS source panel clear of banner; lighter clustering
 
 - Raise the AIS source checkbox panel above the Live timeline banner.
