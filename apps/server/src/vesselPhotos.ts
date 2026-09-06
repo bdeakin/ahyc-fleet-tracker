@@ -116,10 +116,12 @@ type CommonsImageInfo = {
       string,
       {
         title?: string;
+        categories?: Array<{ title?: string }>;
         imageinfo?: Array<{
           thumburl?: string;
           url?: string;
           descriptionurl?: string;
+          mime?: string;
           extmetadata?: Record<string, { value?: string }>;
         }>;
       }
@@ -127,16 +129,26 @@ type CommonsImageInfo = {
   };
 };
 
-async function commonsFile(
-  fileTitle: string,
-): Promise<{ imageUrl: string; pageUrl: string; credit: string; license: string | null } | null> {
+type CommonsFile = {
+  imageUrl: string;
+  pageUrl: string;
+  credit: string;
+  license: string | null;
+  mime: string | null;
+  categories: string[];
+  /** Year the picture was made, when Commons records one. */
+  year: number | null;
+};
+
+async function commonsFile(fileTitle: string): Promise<CommonsFile | null> {
   const q = new URLSearchParams({
     action: "query",
     format: "json",
     titles: fileTitle.startsWith("File:") ? fileTitle : `File:${fileTitle}`,
-    prop: "imageinfo",
-    iiprop: "url|extmetadata",
+    prop: "imageinfo|categories",
+    iiprop: "url|extmetadata|mime",
     iiurlwidth: "900",
+    cllimit: "40",
   });
   const data = await fetchJson<CommonsImageInfo>(`https://commons.wikimedia.org/w/api.php?${q}`);
   const page = Object.values(data.query?.pages ?? {})[0];
@@ -146,12 +158,17 @@ async function commonsFile(
   const meta = info?.extmetadata ?? {};
   const artist = stripTags(meta.Artist?.value) ?? "Wikimedia Commons";
   const license = stripTags(meta.LicenseShortName?.value);
+  const dated = `${meta.DateTimeOriginal?.value ?? ""} ${meta.DateTime?.value ?? ""}`;
+  const yearMatch = dated.match(/\b(1[89]\d\d|20\d\d)\b/);
   return {
     // The API tacks campaign params onto thumburl; they are noise for an <img> fetch.
     imageUrl: raw.split("?")[0]!,
     pageUrl: info?.descriptionurl ?? `https://commons.wikimedia.org/wiki/${encodeURIComponent(fileTitle)}`,
     credit: license ? `${artist} · ${license}` : artist,
     license,
+    mime: info?.mime ?? null,
+    categories: (page?.categories ?? []).map((c) => c.title ?? ""),
+    year: yearMatch ? Number(yearMatch[1]) : null,
   };
 }
 
@@ -197,6 +214,23 @@ function normalizeName(value: string): string {
     .trim();
 }
 
+const ARTWORK_CATEGORY =
+  /\b(pd-art|pd-old|paintings?|drawings?|engravings?|etchings?|lithographs?|prints?|artworks?|illustrations?|maps?|charts?|postcards?)\b/i;
+const PHOTO_MIME = /^image\/(jpeg|png|webp)$/i;
+/** A ship being tracked on AIS today has been photographed; anything older is another hull. */
+const OLDEST_PLAUSIBLE_PHOTO_YEAR = 1970;
+
+/**
+ * A name search can land on a 19th-century painting of a different ship that happened to share
+ * the name, so a name-matched file has to look like a modern photograph before it is used.
+ */
+function isModernPhoto(file: CommonsFile): boolean {
+  if (file.mime && !PHOTO_MIME.test(file.mime)) return false;
+  if (file.categories.some((c) => ARTWORK_CATEGORY.test(c))) return false;
+  if (file.year == null || file.year < OLDEST_PLAUSIBLE_PHOTO_YEAR) return false;
+  return true;
+}
+
 /**
  * Name search is the loosest source, so a hit only counts when the file title contains the
  * vessel name as a phrase. That keeps "PILOT AMERICA" from matching "Pilot Boat America No. 1".
@@ -218,7 +252,7 @@ async function photoFromCommonsName(mmsi: string, name: string): Promise<VesselP
       continue;
     }
     const image = await commonsFile(title);
-    if (!image) continue;
+    if (!image || !isModernPhoto(image)) continue;
     return {
       mmsi,
       status: "ok",

@@ -3,6 +3,7 @@
 ## 0.9.1 — Vessel photos by MMSI
 
 - Clicking a vessel now looks up a **photo from public sources using the MMSI**: VesselFinder's ship page first, then Wikidata by IMO and Wikimedia Commons by name. The pane shows the photo with its credit and licence, and labels name-only matches as a "likely match".
+- Name matches must look like a modern photograph — verbatim name in the file title, no artwork categories, capture year 1970 or later — so a ship-name collision cannot put a 19th-century painting in the pane.
 - Photos are never stored locally — lookups and image bytes sit in short-lived process memory, and the kiosk loads them through `GET /api/vessels/photo/:mmsi/image` so there is no mixed-content or hotlink trouble.
 - Fixed: tray cards and the open detail pane no longer go blank when the map moves away from those vessels — `GET /api/live` takes a `pinned` list that bypasses the viewport filter.
 - Fixed: the vessel detail pane no longer covers the search results, so a second vessel can be added to the tray while one is open.
