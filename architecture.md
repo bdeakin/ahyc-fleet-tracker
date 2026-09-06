@@ -16,7 +16,7 @@
 ## AISHub (optional)
 
 - Env: `AISHUB_USERNAME` on Railway.
-- Daily bbox: `NORTHEAST_BBOX` (Chesapeake → Maine) for club MMSIs.
+- Daily bbox: `NORTHEAST_BBOX` (Chesapeake → Maine + Great Lakes) for club MMSIs.
 - Perimeter watch: club boats near/outside the box are stored in SQLite `aishub_watch` and queried via the AISHub `mmsi=` parameter until `deepInsideBbox`.
 - Rate limit: one HTTP request every 5 minutes by default (API floor: 5 min (API floor 1/min)) (bbox + MMSI share a single scheduler).
 

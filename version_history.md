@@ -1,5 +1,10 @@
 # Version history
 
+## 0.8.2 — AISHub coverage includes the Great Lakes
+
+- Expanded `NORTHEAST_BBOX` west/north to cover Lakes Superior through Ontario (with the existing Chesapeake→Maine seaboard).
+
+
 ## 0.8.1 — AISHub full Northeast ingest every 5 minutes
 
 - AISHub Northeast bbox now ingests **all** returned vessels (not only club MMSIs).
@@ -9,7 +14,7 @@
 
 ## 0.8.0 — AISHub Northeast bbox + outbound MMSI watch
 
-- Optional AISHub poller (`AISHUB_USERNAME`) pulls a Chesapeake→Maine bbox about every 5 minutes for club vessels.
+- Optional AISHub poller (`AISHUB_USERNAME`) pulls a Chesapeake→Maine + Great Lakes bbox about every 5 minutes for club vessels.
 - Club boats near/outside that perimeter are added to an MMSI watchlist and polled until they return deep inside the box (Bermuda-race style departures).
 - Default poll every **5 minutes** (API floor still 5 min (API floor 1/min)). Daily Northeast bbox ingests **all** vessels, not only club MMSIs; club boats near/outside the perimeter still get MMSI watch.
 - Club vessel positions may be stored outside the harbor `TRAFFIC_BBOX` so offshore tracks persist.

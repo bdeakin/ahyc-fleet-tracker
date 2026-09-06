@@ -147,14 +147,14 @@ export const DEFAULT_BBOX = {
 } as const satisfies BBox;
 
 /**
- * AISHub daily coverage: Chesapeake Bay mouth through Downeast Maine
- * (greater Northeast seaboard for club vessel tracking).
+ * AISHub coverage: Chesapeake Bay through Downeast Maine, west through
+ * the Great Lakes (Superior → Ontario) for club cruising / race tracking.
  */
 export const NORTHEAST_BBOX = {
-  minLat: 36.5,
-  minLon: -77.5,
-  maxLat: 45.0,
-  maxLon: -66.5,
+  minLat: 36.5,   // Cape Henry / southern Chesapeake
+  minLon: -92.5,  // western Lake Superior (Duluth)
+  maxLat: 49.5,   // northern Lake Superior
+  maxLon: -66.5,  // east of Maine / Gulf of Maine
 } as const satisfies BBox;
 
 /** Default perimeter band (degrees) inside NORTHEAST_BBOX that triggers MMSI watch. ~30 nm. */
