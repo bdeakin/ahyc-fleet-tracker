@@ -21,6 +21,8 @@ export type NoteworthyBundle = {
 
 /** Detectors walk every fix in the window, so results are cached rather than recomputed per view. */
 const CACHE_TTL_MS = 3 * 60_000;
+/** Bundles carry the tracks behind every event, so keep only the windows in current use. */
+const CACHE_MAX_WINDOWS = 4;
 /** Bathymetry rarely changes; a cached sample is good indefinitely. */
 const DEPTH_CELL_DECIMALS = 3;
 const DEPTH_LOOKUP_TIMEOUT_MS = 6_000;
@@ -65,20 +67,34 @@ function loadFixes(db: Db, from: number, to: number): NoteworthyFix[] {
     from = Math.max(from, to - keepSpan);
   }
 
-  return db
+  const fixes = db
     .prepare(
-      `SELECT mmsi, lat, lon, sog, cog, ts, name, shipType FROM (
-         SELECT p.mmsi AS mmsi, p.lat AS lat, p.lon AS lon, p.sog AS sog, p.cog AS cog,
-                MIN(p.ts) AS ts, n.name AS name, n.ship_type AS shipType
-           FROM track_points p
-           LEFT JOIN traffic_names n ON n.mmsi = p.mmsi
-          WHERE p.ts >= ? AND p.ts <= ?
-          GROUP BY p.mmsi, p.ts / ?
+      `SELECT mmsi, ROUND(lat, 5) AS lat, ROUND(lon, 5) AS lon,
+              ROUND(sog, 1) AS sog, ROUND(cog, 1) AS cog, ts FROM (
+         SELECT mmsi, lat, lon, sog, cog, MIN(ts) AS ts
+           FROM track_points
+          WHERE ts >= ? AND ts <= ?
+          GROUP BY mmsi, ts / ?
           ORDER BY ts DESC
           LIMIT ?
        ) ORDER BY ts ASC`,
     )
     .all(from, to, FIX_BUCKET_MS, MAX_FIXES) as FixRow[];
+
+  // Names come from a per-vessel lookup rather than a join: joined, SQLite hands back a
+  // separate copy of the name string on every one of the tens of thousands of fixes.
+  const names = new Map<string, { name: string | null; shipType: number | null }>();
+  for (const row of db
+    .prepare("SELECT mmsi, name, ship_type AS shipType FROM traffic_names")
+    .all() as Array<{ mmsi: string; name: string | null; shipType: number | null }>) {
+    names.set(row.mmsi, { name: row.name, shipType: row.shipType });
+  }
+  for (const fix of fixes) {
+    const meta = names.get(fix.mmsi);
+    fix.name = meta?.name ?? null;
+    fix.shipType = meta?.shipType ?? null;
+  }
+  return fixes;
 }
 
 function depthCell(lat: number, lon: number): string {
@@ -131,10 +147,29 @@ function draughtFor(db: Db, mmsi: string, shipTypeByMmsi: Map<string, number | n
   return estimateDraughtM(shipTypeByMmsi.get(mmsi) ?? null, profile?.lengthM ?? null);
 }
 
-export async function buildNoteworthy(db: Db, hours: number): Promise<NoteworthyBundle> {
+function fresh(hours: number): NoteworthyBundle | null {
   const cached = cache.get(hours);
-  if (cached && Date.now() - cached.generatedAt < CACHE_TTL_MS) return cached;
+  return cached && Date.now() - cached.generatedAt < CACHE_TTL_MS ? cached : null;
+}
 
+/**
+ * Rebuilds run one at a time. Each holds tens of thousands of fixes while the detectors walk
+ * them, and the window is a query parameter, so several kiosks on different settings could
+ * otherwise put several of those arrays in memory at once — which on a small container is the
+ * difference between busy and killed.
+ */
+let queue: Promise<unknown> = Promise.resolve();
+
+export function buildNoteworthy(db: Db, hours: number): Promise<NoteworthyBundle> {
+  const cached = fresh(hours);
+  if (cached) return Promise.resolve(cached);
+
+  const run = queue.then(() => fresh(hours) ?? rebuild(db, hours));
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+async function rebuild(db: Db, hours: number): Promise<NoteworthyBundle> {
   const to = Date.now();
   const from = to - hours * 3600_000;
   const fixes = loadFixes(db, from, to);
@@ -166,5 +201,12 @@ export async function buildNoteworthy(db: Db, hours: number): Promise<Noteworthy
     events,
   };
   cache.set(hours, bundle);
+  // The window is a query parameter, so a handful of kiosks on different settings could
+  // otherwise pin one bundle of events and tracks per hour value, up to the 72 the route allows.
+  while (cache.size > CACHE_MAX_WINDOWS) {
+    const oldest = cache.keys().next().value;
+    if (oldest == null) break;
+    cache.delete(oldest);
+  }
   return bundle;
 }

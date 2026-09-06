@@ -1,5 +1,17 @@
 # Development narrative
 
+## 2026-09-06 — Where the rest of the memory was hiding
+
+The first pass fixed the two requests that could not possibly fit. Asked to go further, I stopped guessing and hammered one endpoint at a time while reading the process's own memory. That immediately corrected an assumption: under sustained load the resident set sat around 220 MB while V8's heap held 16 MB of live data and 77 MB of committed space. Two thirds of the footprint was not the JavaScript heap at all. It was SQLite — its page cache, its sort scratch, and its habit of keeping what it has allocated.
+
+Four pragmas — a 4 MB page cache, sort scratch spilled to the volume, a soft heap limit, and a WAL checkpoint threshold — took it from 221 MB to 186 MB, and repeated timings showed no change in query speed at all, because the kernel is caching the database file anyway. The page cache was buying nothing.
+
+The satisfying one was smaller and more obvious in hindsight: track responses were serialising full double precision. `40.579851226806641` is seventeen digits describing a position AIS knows to a few metres; five decimals is about a metre and costs seven characters. Rounding in SQL took the largest response from 3.67 MB to 2.58 MB with no visible difference on the chart.
+
+I also stopped picking the heap cap by hand. V8 cannot see a container's memory limit, so the whole failure mode is a process sizing its heap against a host it does not own — and the number I had chosen was right only for the instance size I had assumed. The container's limit is readable from its cgroup, so the start script reads it and gives V8 a little under half, which is correct whether the platform hands over 256 MB or 8 GB.
+
+The rest was ceilings rather than usage: the photo cache was bounded by entry count at a size that permitted 96 MB of ship pictures, the noteworthy bundle cache could hold one bundle per hour value the route accepts (seventy-two), and rebuilds could run concurrently, each with its own array of tens of thousands of fixes. None of those had happened yet. All of them were reachable from a browser.
+
 ## 2026-09-06 — Two queries that were never going to fit
 
 "Ran out of memory" was the platform's phrasing, and the temptation with a memory report is to go looking for leaks. There wasn't one. There were two requests that each allocated more than the container was ever allowed to hold, and the only reason the app had survived this long is that it had not yet collected enough traffic for them to matter.

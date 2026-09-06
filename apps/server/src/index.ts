@@ -8,7 +8,7 @@ import { AisIngestWorker } from "./aisWorker.js";
 import { AishubWorker } from "./aishubWorker.js";
 import { setBootError } from "./bootState.js";
 import { ensurePrimaryClubVessel, ensureSeedWatchlist } from "./bootstrap.js";
-import { config, isMountPoint, paths } from "./config.js";
+import { config, isMountPoint, isProductionRuntime, paths } from "./config.js";
 import { closeDb, getDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
 import { listLiveStates, pruneTrafficHistory } from "./tracks.js";
@@ -41,7 +41,12 @@ try {
   console.error("[ahyc] boot failed — serving diagnostics only:", err);
 }
 
-const app = Fastify({ logger: true });
+/*
+ * Two log lines per request is a lot of object churn when several kiosks poll live AIS every
+ * five seconds, and none of it is read. In production keep warnings and errors; a developer
+ * still gets the full request log.
+ */
+const app = Fastify({ logger: isProductionRuntime() ? { level: "warn" } : true });
 await app.register(cors, { origin: true });
 await app.register(websocket);
 

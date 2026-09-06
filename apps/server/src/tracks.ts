@@ -362,7 +362,10 @@ function bucketMs(from: number, to: number, perVessel: number): number {
  * takes the newest rows when the cap bites; the outer one puts them back in time order.
  */
 function thinnedTrackQuery(scope: string): string {
-  return `SELECT mmsi, lat, lon, sog, cog, heading, ts FROM (
+  // Five decimals is about a metre, and AIS is nowhere near that good. Serialising the raw
+  // doubles costs roughly a third of the response for digits nothing can use.
+  return `SELECT mmsi, ROUND(lat, 5) AS lat, ROUND(lon, 5) AS lon,
+                 ROUND(sog, 1) AS sog, ROUND(cog, 1) AS cog, heading, ts FROM (
             SELECT mmsi, lat, lon, sog, cog, heading, MIN(ts) AS ts
               FROM track_points
              WHERE ${scope} ts >= ? AND ts <= ?

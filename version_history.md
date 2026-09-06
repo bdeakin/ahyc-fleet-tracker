@@ -1,5 +1,25 @@
 # Version history
 
+## 0.9.13 — Second pass on memory
+
+Measured on the same 4.3 M-point database under sustained load (six clients, continuous heavy queries):
+
+| | before this pass | after |
+| --- | --- | --- |
+| idle | 99 MB | 85 MB |
+| peak under continuous load | 223 MB | 196 MB |
+| resident once load stops | 221 MB | 195 MB |
+| largest response (`/api/tracks`, 24 h) | 3.67 MB | 2.58 MB |
+
+- V8's heap cap now comes from the container's own cgroup limit (`apps/server/bin/start.sh`, 45 % of it, clamped to 128–1024 MB) instead of a number picked by hand. A 512 MB instance gets 230 MB, a 256 MB instance gets 128 MB, and an unlimited one falls back to 256 MB.
+- Coordinates are rounded in SQL — five decimals of latitude is about a metre, and AIS is nowhere near that good. That is 30 % off the biggest response for digits nothing could use.
+- SQLite holds a 4 MB page cache, spills sort scratch to the volume rather than memory, and runs under a 16 MB soft heap limit. Worth 35 MB of resident memory with no measurable change in query time, because the kernel caches the file anyway.
+- Noteworthy rebuilds run one at a time (each holds tens of thousands of fixes), the bundle cache keeps 4 windows rather than the 72 the route allows, and names come from a per-vessel lookup instead of a join that copied the name string onto every fix.
+- The vessel photo cache is bounded by bytes (8 MB, 2 MB per photo) rather than by entry count, which allowed 96 MB; photo metadata is capped at 500 vessels rather than kept forever.
+- `MALLOC_ARENA_MAX=2`: glibc gives each thread its own arena and rarely hands the memory back.
+- Production logs at `warn`, so the two lines per request that nobody reads are not allocated while several kiosks poll every five seconds.
+- `/api/health` `memory` now includes heap total, external bytes, and V8's real heap limit.
+
 ## 0.9.12 — Memory: the deploy that ran out of it
 
 Measured against a 2.5 M-point database (roughly three times a busy harbour day at the 60 s ingest cadence):

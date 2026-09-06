@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import v8 from "node:v8";
 import type { FastifyInstance } from "fastify";
 import { getBootError } from "./bootState.js";
 import { buildAdventure } from "./narrative.js";
@@ -62,14 +63,22 @@ function refreshHealthSpan(): void {
   });
 }
 
-function memorySnapshot(): { rssMb: number; heapUsedMb: number; heapLimitMb: number } {
+function memorySnapshot(): {
+  rssMb: number;
+  heapUsedMb: number;
+  heapTotalMb: number;
+  externalMb: number;
+  heapLimitMb: number;
+} {
   const mb = (bytes: number) => Math.round(bytes / 1048576);
-  const { rss, heapUsed, heapTotal } = process.memoryUsage();
-  const cap = process.env.NODE_OPTIONS?.match(/--max-old-space-size=(\d+)/)?.[1];
+  const { rss, heapUsed, heapTotal, external } = process.memoryUsage();
   return {
     rssMb: mb(rss),
     heapUsedMb: mb(heapUsed),
-    heapLimitMb: cap ? Number(cap) : mb(heapTotal),
+    heapTotalMb: mb(heapTotal),
+    /** Buffers and native allocations: SQLite results and outgoing response bodies. */
+    externalMb: mb(external),
+    heapLimitMb: mb(v8.getHeapStatistics().heap_size_limit),
   };
 }
 

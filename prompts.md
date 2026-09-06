@@ -12,7 +12,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Season ≈ April–October; any vessel × any season with data
 - Raspberry Pi capable; Railway for phone-friendly cloud deploy
 - Supabase optional for admin auth + vessel registry sync
-- Must run inside a small container: every stored-fix query is bucketed and capped, chart pyramids ship pre-cut in the image, and V8's heap is capped so a spike is collected rather than killed. `/api/health` reports `memory`.
+- Must run inside a small container: every stored-fix query is bucketed and capped, chart pyramids ship pre-cut in the image, in-memory caches are bounded by bytes, and V8's heap is capped from the container's own cgroup limit so a spike is collected rather than killed. `/api/health` reports `memory`.
 
 ## Known club vessels
 

@@ -41,9 +41,9 @@ ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV DATA_DIR=/data
 ENV PORT=8787
-# Left uncapped, V8 sizes its heap from the host's memory rather than the container's limit,
-# so a spike gets the process killed instead of collected. Raise this on a larger instance.
-ENV NODE_OPTIONS="--max-old-space-size=384"
+# glibc gives every thread its own arena and rarely returns the memory; two arenas cost a
+# little contention and measurably less resident set.
+ENV MALLOC_ARENA_MAX=2
 ENV HISTORICAL_TILE_SEED_DIR=/app/tile-seed
 
 RUN mkdir -p /data/db /data/charts
@@ -56,7 +56,7 @@ COPY --from=build /app/tile-seed ./tile-seed
 
 EXPOSE 8787
 
-# node directly, not `npm run start`: npm does not forward SIGTERM to the server and exits
-# non-zero when the platform stops the container, which reads as a crash and triggers a
-# restart loop.
-CMD ["node", "apps/server/dist/index.js"]
+# The start script execs node, so the server is still PID 1 and receives SIGTERM directly.
+# (`npm run start` does not forward it, and exits non-zero when the platform stops the
+# container, which reads as a crash and triggers a restart loop.)
+CMD ["sh", "apps/server/bin/start.sh"]

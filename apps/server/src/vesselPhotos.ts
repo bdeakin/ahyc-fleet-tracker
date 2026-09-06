@@ -22,8 +22,15 @@ const HIT_TTL_MS = 12 * 60 * 60_000;
 const MISS_TTL_MS = 2 * 60 * 60_000;
 const ERROR_TTL_MS = 10 * 60_000;
 const IMAGE_TTL_MS = 60 * 60_000;
-const IMAGE_CACHE_MAX = 24;
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+/*
+ * Photos are held in memory rather than on the volume, so the cache is bounded by bytes:
+ * counting entries let a run of large photos reserve far more of the container than a few
+ * ship pictures are worth. Metadata is small but is kept per MMSI forever otherwise, and the
+ * harbour has thousands of them over a season.
+ */
+const IMAGE_CACHE_MAX_BYTES = 8 * 1024 * 1024;
+const META_CACHE_MAX = 500;
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 /** VesselFinder throttles bursts, and photos are only fetched on a click, so keep it slow. */
 const SOURCE_MIN_GAP_MS = 1_200;
 
@@ -37,6 +44,31 @@ let lastSourceFetchAt = 0;
 
 function now(): number {
   return Date.now();
+}
+
+/** Drop expired photos first, then the oldest, until the cache is inside its byte budget. */
+function trimImageCache(): void {
+  let bytes = 0;
+  for (const [key, entry] of imageCache) {
+    if (entry.expiresAt <= now()) imageCache.delete(key);
+    else bytes += entry.body.byteLength;
+  }
+  for (const [key, entry] of imageCache) {
+    if (bytes <= IMAGE_CACHE_MAX_BYTES) break;
+    imageCache.delete(key);
+    bytes -= entry.body.byteLength;
+  }
+}
+
+function trimMetaCache(): void {
+  for (const [key, entry] of metaCache) {
+    if (entry.expiresAt <= now()) metaCache.delete(key);
+  }
+  while (metaCache.size > META_CACHE_MAX) {
+    const oldest = metaCache.keys().next().value;
+    if (oldest == null) break;
+    metaCache.delete(oldest);
+  }
 }
 
 async function spaceOutRequests(): Promise<void> {
@@ -341,6 +373,7 @@ export async function getVesselPhoto(
       const ttl =
         photo.status === "ok" ? HIT_TTL_MS : photo.status === "none" ? MISS_TTL_MS : ERROR_TTL_MS;
       metaCache.set(clean, { photo, expiresAt: now() + ttl });
+      trimMetaCache();
       inFlight.delete(clean);
       return photo;
     });
@@ -382,11 +415,7 @@ export async function getVesselPhotoBytes(
     if (buf.byteLength === 0 || buf.byteLength > MAX_IMAGE_BYTES) return null;
 
     imageCache.set(clean, { body: buf, contentType, expiresAt: now() + IMAGE_TTL_MS });
-    while (imageCache.size > IMAGE_CACHE_MAX) {
-      const oldest = imageCache.keys().next().value;
-      if (oldest == null) break;
-      imageCache.delete(oldest);
-    }
+    trimImageCache();
     return { body: buf, contentType };
   } catch (err) {
     console.warn(`[vessel-photo] image fetch failed mmsi=${clean}:`, err);
