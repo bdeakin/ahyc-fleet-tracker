@@ -13,6 +13,12 @@ export function getDb(): Db {
   db = new Database(paths.db);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  // Page cache and WAL both count against the container's memory limit, so keep them small
+  // and let the kernel do the caching: 16 MB of pages, and a checkpoint before the WAL can
+  // grow past ~8 MB.
+  db.pragma("cache_size = -16000");
+  db.pragma("journal_size_limit = 8388608");
+  db.pragma("wal_autocheckpoint = 2000");
   migrate(db);
   return db;
 }

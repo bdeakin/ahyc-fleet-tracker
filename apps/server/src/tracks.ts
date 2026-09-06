@@ -332,39 +332,81 @@ export function listLiveStates(db: Db, opts: ListLiveOptions = {}): VesselLiveSt
   return live;
 }
 
+/**
+ * Track reads are the biggest allocation the server makes. A day of harbour traffic is
+ * millions of rows, and handing all of them to the map both stalls the response and pushes
+ * the container past its memory limit, so every query thins to at most one fix per vessel
+ * per time bucket and stops at a hard row cap. Buckets are sized from the requested span,
+ * which leaves short windows at full resolution and only coarsens long ones.
+ */
+const TRACK_POINT_BUDGET = {
+  /** One vessel asked for by name: enough for a smooth line over a month of history. */
+  single: { perVessel: 4_000, maxRows: 12_000 },
+  /** A named handful, i.e. the short trails behind the vessels on screen. */
+  named: { perVessel: 600, maxRows: 24_000 },
+  /** Every vessel in the window, i.e. the timeline scrub. Coarse on purpose. */
+  all: { perVessel: 150, maxRows: 24_000 },
+};
+const MIN_BUCKET_MS = 1_000;
+/** Replay marker positions are one indexed lookup per vessel, so cap how many we walk. */
+const REPLAY_VESSEL_CAP = 600;
+
+function bucketMs(from: number, to: number, perVessel: number): number {
+  const span = Math.max(0, to - from);
+  return Math.max(MIN_BUCKET_MS, Math.ceil(span / Math.max(1, perVessel)));
+}
+
+/**
+ * `MIN(ts)` with bare columns is SQLite's documented "pick the row that owns the minimum"
+ * form, so each bucket yields a real fix rather than a blend of several. The inner query
+ * takes the newest rows when the cap bites; the outer one puts them back in time order.
+ */
+function thinnedTrackQuery(scope: string): string {
+  return `SELECT mmsi, lat, lon, sog, cog, heading, ts FROM (
+            SELECT mmsi, lat, lon, sog, cog, heading, MIN(ts) AS ts
+              FROM track_points
+             WHERE ${scope} ts >= ? AND ts <= ?
+             GROUP BY mmsi, ts / ?
+             ORDER BY ts DESC
+             LIMIT ?
+          ) ORDER BY ts ASC`;
+}
+
 export function queryTracks(
   db: Db,
   opts: { mmsi?: string; mmsis?: string[]; from: number; to: number },
 ): TrackPoint[] {
   if (opts.mmsi) {
+    const { perVessel, maxRows } = TRACK_POINT_BUDGET.single;
     return db
-      .prepare(
-        `SELECT mmsi, lat, lon, sog, cog, heading, ts FROM track_points
-         WHERE mmsi = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC`,
-      )
-      .all(opts.mmsi, opts.from, opts.to) as TrackPoint[];
+      .prepare(thinnedTrackQuery("mmsi = ? AND"))
+      .all(opts.mmsi, opts.from, opts.to, bucketMs(opts.from, opts.to, perVessel), maxRows) as TrackPoint[];
   }
   if (opts.mmsis && opts.mmsis.length > 0) {
     const unique = [...new Set(opts.mmsis.map((m) => m.trim()).filter(Boolean))].slice(0, 120);
     if (unique.length === 0) return [];
+    const { perVessel, maxRows } = TRACK_POINT_BUDGET.named;
     const placeholders = unique.map(() => "?").join(",");
     return db
-      .prepare(
-        `SELECT mmsi, lat, lon, sog, cog, heading, ts FROM track_points
-         WHERE mmsi IN (${placeholders}) AND ts >= ? AND ts <= ? ORDER BY ts ASC`,
-      )
-      .all(...unique, opts.from, opts.to) as TrackPoint[];
+      .prepare(thinnedTrackQuery(`mmsi IN (${placeholders}) AND`))
+      .all(
+        ...unique,
+        opts.from,
+        opts.to,
+        bucketMs(opts.from, opts.to, perVessel),
+        maxRows,
+      ) as TrackPoint[];
   }
+  const { perVessel, maxRows } = TRACK_POINT_BUDGET.all;
   return db
-    .prepare(
-      `SELECT mmsi, lat, lon, sog, cog, heading, ts FROM track_points
-       WHERE ts >= ? AND ts <= ? ORDER BY ts ASC`,
-    )
-    .all(opts.from, opts.to) as TrackPoint[];
+    .prepare(thinnedTrackQuery(""))
+    .all(opts.from, opts.to, bucketMs(opts.from, opts.to, perVessel), maxRows) as TrackPoint[];
 }
 
 export function positionsAt(db: Db, at: number): VesselLiveState[] {
-  const mmsis = db.prepare("SELECT DISTINCT mmsi FROM track_points").all() as Array<{ mmsi: string }>;
+  const mmsis = db
+    .prepare("SELECT DISTINCT mmsi FROM track_points WHERE ts <= ? LIMIT ?")
+    .all(at, REPLAY_VESSEL_CAP) as Array<{ mmsi: string }>;
   const out: VesselLiveState[] = [];
   const stmt = db.prepare(
     `SELECT mmsi, lat, lon, sog, cog, heading, ts FROM track_points

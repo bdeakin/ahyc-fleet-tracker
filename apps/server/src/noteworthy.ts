@@ -43,26 +43,42 @@ type FixRow = {
   shipType: number | null;
 };
 
+/**
+ * The detectors want steady sampling, not every fix: a pilot boarding or a speed run reads
+ * the same at one fix per {@link FIX_BUCKET_MS} as it does at the raw ingest rate, and a busy
+ * day of raw fixes is millions of rows that will not fit in a small container's memory.
+ * Thinning here bounds both the array and everything downstream of it.
+ */
+const FIX_BUCKET_MS = 15_000;
+const MAX_FIXES = 60_000;
+
 function loadFixes(db: Db, from: number, to: number): NoteworthyFix[] {
-  const rows = db
+  // Only the newest fixes survive the cap, so narrow the scan to roughly the span that
+  // holds them rather than grouping a whole day of rows and throwing most away. Counting
+  // first is one index walk; the group-by that follows is the expensive part.
+  const { rows } = db
+    .prepare("SELECT COUNT(*) AS rows FROM track_points WHERE ts >= ? AND ts <= ?")
+    .get(from, to) as { rows: number };
+  if (rows > MAX_FIXES) {
+    // Traffic is bursty, so ask for twice the span the average density suggests.
+    const keepSpan = Math.ceil(((to - from) * MAX_FIXES * 2) / rows);
+    from = Math.max(from, to - keepSpan);
+  }
+
+  return db
     .prepare(
-      `SELECT p.mmsi, p.lat, p.lon, p.sog, p.cog, p.ts, n.name AS name, n.ship_type AS shipType
-         FROM track_points p
-         LEFT JOIN traffic_names n ON n.mmsi = p.mmsi
-        WHERE p.ts >= ? AND p.ts <= ?
-        ORDER BY p.ts ASC`,
+      `SELECT mmsi, lat, lon, sog, cog, ts, name, shipType FROM (
+         SELECT p.mmsi AS mmsi, p.lat AS lat, p.lon AS lon, p.sog AS sog, p.cog AS cog,
+                MIN(p.ts) AS ts, n.name AS name, n.ship_type AS shipType
+           FROM track_points p
+           LEFT JOIN traffic_names n ON n.mmsi = p.mmsi
+          WHERE p.ts >= ? AND p.ts <= ?
+          GROUP BY p.mmsi, p.ts / ?
+          ORDER BY ts DESC
+          LIMIT ?
+       ) ORDER BY ts ASC`,
     )
-    .all(from, to) as FixRow[];
-  return rows.map((r) => ({
-    mmsi: r.mmsi,
-    lat: r.lat,
-    lon: r.lon,
-    sog: r.sog,
-    cog: r.cog,
-    ts: r.ts,
-    name: r.name,
-    shipType: r.shipType,
-  }));
+    .all(from, to, FIX_BUCKET_MS, MAX_FIXES) as FixRow[];
 }
 
 function depthCell(lat: number, lon: number): string {

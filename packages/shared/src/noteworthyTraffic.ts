@@ -193,6 +193,11 @@ const EVASIVE_NEARBY_NM = 0.45;
 const EVASIVE_NEARBY_TIME_MS = 2 * 60_000;
 const EVASIVE_TRACK_PAD_MS = 8 * 60_000;
 const EVASIVE_MAX_EVENTS = 30;
+/** Turns kept for the expensive second pass — far more than the map will ever show. */
+const EVASIVE_CANDIDATE_CAP = 240;
+/** Buckets for the nearby-vessel index: ~0.6 nm of latitude, one minute. */
+const NEARBY_CELL_DEG = 0.01;
+const NEARBY_BUCKET_MS = 60_000;
 
 const STOPPED_SOG_KN = 0.5;
 const NOWAKE_SPEED_KN = 5;
@@ -231,14 +236,120 @@ function nameFor(fixes: NoteworthyFix[], mmsi: string): string | null {
   return null;
 }
 
+type EvasiveCandidate = {
+  mmsi: string;
+  pts: NoteworthyFix[];
+  a: NoteworthyFix;
+  b: NoteworthyFix;
+  sog: number;
+  delta: number;
+  turnRate: number;
+  cogBefore: number;
+  cogAfter: number;
+  score: number;
+};
+
+function trimCandidates(candidates: EvasiveCandidate[]): void {
+  if (candidates.length <= EVASIVE_CANDIDATE_CAP) return;
+  candidates.sort((x, y) => y.score - x.score);
+  candidates.length = EVASIVE_CANDIDATE_CAP;
+}
+
+/**
+ * Fixes bucketed by minute and by a fixed-size lat/lon cell, so "who else was here, then"
+ * is a handful of lookups instead of a walk over every other vessel's whole track.
+ */
+type NearbyIndex = Map<string, NoteworthyFix[]>;
+
+function nearbyKey(timeBucket: number, latCell: number, lonCell: number): string {
+  return `${timeBucket}|${latCell}|${lonCell}`;
+}
+
+function buildNearbyIndex(fixes: NoteworthyFix[]): NearbyIndex {
+  const index: NearbyIndex = new Map();
+  for (const f of fixes) {
+    const key = nearbyKey(
+      Math.floor(f.ts / NEARBY_BUCKET_MS),
+      Math.floor(f.lat / NEARBY_CELL_DEG),
+      Math.floor(f.lon / NEARBY_CELL_DEG),
+    );
+    const cell = index.get(key);
+    if (cell) cell.push(f);
+    else index.set(key, [f]);
+  }
+  return index;
+}
+
+/** Closest fix in time for each other vessel within the radius, nearest first. */
+function nearbyAt(
+  index: NearbyIndex,
+  lat: number,
+  lon: number,
+  ts: number,
+  selfMmsi: string,
+): NearbyVesselSnapshot[] {
+  const bucket = Math.floor(ts / NEARBY_BUCKET_MS);
+  const buckets = Math.ceil(EVASIVE_NEARBY_TIME_MS / NEARBY_BUCKET_MS);
+  const latCell = Math.floor(lat / NEARBY_CELL_DEG);
+  const lonCell = Math.floor(lon / NEARBY_CELL_DEG);
+  // Cells are ~0.6 nm tall and narrower with latitude, so reach further east-west.
+  const best = new Map<string, { fix: NoteworthyFix; dt: number }>();
+  for (let tb = bucket - buckets; tb <= bucket + buckets; tb++) {
+    for (let dLat = -1; dLat <= 1; dLat++) {
+      for (let dLon = -2; dLon <= 2; dLon++) {
+        const cell = index.get(nearbyKey(tb, latCell + dLat, lonCell + dLon));
+        if (!cell) continue;
+        for (const f of cell) {
+          if (f.mmsi === selfMmsi) continue;
+          const dt = Math.abs(f.ts - ts);
+          if (dt > EVASIVE_NEARBY_TIME_MS) continue;
+          const seen = best.get(f.mmsi);
+          if (!seen || dt < seen.dt) best.set(f.mmsi, { fix: f, dt });
+        }
+      }
+    }
+  }
+
+  const out: NearbyVesselSnapshot[] = [];
+  for (const [mmsi, { fix }] of best) {
+    const distanceNm = haversineNm(lat, lon, fix.lat, fix.lon);
+    if (distanceNm > EVASIVE_NEARBY_NM) continue;
+    out.push({
+      mmsi,
+      name: fix.name ?? null,
+      lat: fix.lat,
+      lon: fix.lon,
+      sog: fix.sog ?? null,
+      cog: fix.cog ?? null,
+      distanceNm,
+    });
+  }
+  out.sort((x, y) => x.distanceNm - y.distanceNm);
+  return out.slice(0, 8);
+}
+
+/** The slice of a sorted track between two times, as segment points. */
+function trackBetween(pts: NoteworthyFix[], from: number, to: number): TrackSegmentPoint[] {
+  const out: TrackSegmentPoint[] = [];
+  for (let i = lowerBound(pts, from); i < pts.length && pts[i]!.ts <= to; i++) {
+    const p = pts[i]!;
+    out.push({ lat: p.lat, lon: p.lon, sog: p.sog ?? null, cog: p.cog ?? null, ts: p.ts });
+  }
+  return out;
+}
+
 /**
  * Detect sudden large COG changes while making way (≥ ~8 kn).
  * Nearby vessels at the maneuver time are attached for context.
  */
 export function detectEvasiveManeuvers(fixes: NoteworthyFix[]): EvasiveManeuverEvent[] {
   const byMmsi = groupByMmsi(fixes);
-  const events: EvasiveManeuverEvent[] = [];
+  const nearbyIndex = buildNearbyIndex(fixes);
 
+  // Two passes. Finding the turns is cheap, so do that for the whole window and keep only
+  // the strongest few; building a track and a nearby list for every turn in a busy day is
+  // what used to make this detector the heaviest thing in a rebuild.
+  const candidates: EvasiveCandidate[] = [];
   for (const [mmsi, pts] of byMmsi) {
     if (pts.length < 3) continue;
     for (let i = 1; i < pts.length; i++) {
@@ -255,64 +366,45 @@ export function detectEvasiveManeuvers(fixes: NoteworthyFix[]): EvasiveManeuverE
       const turnRate = delta / (dt / 60_000);
       if (turnRate < EVASIVE_MIN_TURN_RATE_DEG_PER_MIN) continue;
 
-      const t0 = b.ts - EVASIVE_TRACK_PAD_MS;
-      const t1 = b.ts + EVASIVE_TRACK_PAD_MS;
-      const track: TrackSegmentPoint[] = pts
-        .filter((p) => p.ts >= t0 && p.ts <= t1)
-        .map((p) => ({
-          lat: p.lat,
-          lon: p.lon,
-          sog: p.sog ?? null,
-          cog: p.cog ?? null,
-          ts: p.ts,
-        }));
-
-      const nearby: NearbyVesselSnapshot[] = [];
-      for (const [otherMmsi, otherPts] of byMmsi) {
-        if (otherMmsi === mmsi) continue;
-        // closest fix in time window
-        let best: NoteworthyFix | null = null;
-        let bestDt = Infinity;
-        for (const p of otherPts) {
-          const dtw = Math.abs(p.ts - b.ts);
-          if (dtw > EVASIVE_NEARBY_TIME_MS) continue;
-          if (dtw < bestDt) {
-            bestDt = dtw;
-            best = p;
-          }
-        }
-        if (!best) continue;
-        const dist = haversineNm(b.lat, b.lon, best.lat, best.lon);
-        if (dist > EVASIVE_NEARBY_NM) continue;
-        nearby.push({
-          mmsi: otherMmsi,
-          name: best.name ?? nameFor(otherPts, otherMmsi),
-          lat: best.lat,
-          lon: best.lon,
-          sog: best.sog ?? null,
-          cog: best.cog ?? null,
-          distanceNm: dist,
-        });
-      }
-      nearby.sort((x, y) => x.distanceNm - y.distanceNm);
-
-      events.push({
-        id: `evasive:${mmsi}:${b.ts}`,
-        kind: "evasive",
+      candidates.push({
         mmsi,
-        name: b.name ?? a.name ?? nameFor(pts, mmsi),
-        ts: b.ts,
-        lat: b.lat,
-        lon: b.lon,
-        sogKn: sog,
+        pts,
+        a,
+        b,
+        sog,
+        delta,
+        turnRate,
         cogBefore: a.cog,
         cogAfter: b.cog,
-        cogDeltaDeg: delta,
-        turnRateDegPerMin: turnRate,
-        track,
-        nearby: nearby.slice(0, 8),
+        score: turnRate * sog,
       });
+      if (candidates.length >= EVASIVE_CANDIDATE_CAP * 2) trimCandidates(candidates);
     }
+  }
+  trimCandidates(candidates);
+
+  const events: EvasiveManeuverEvent[] = [];
+  for (const c of candidates) {
+    const { mmsi, pts, a, b } = c;
+    const track = trackBetween(pts, b.ts - EVASIVE_TRACK_PAD_MS, b.ts + EVASIVE_TRACK_PAD_MS);
+    const nearby = nearbyAt(nearbyIndex, b.lat, b.lon, b.ts, mmsi);
+
+    events.push({
+      id: `evasive:${mmsi}:${b.ts}`,
+      kind: "evasive",
+      mmsi,
+      name: b.name ?? a.name ?? nameFor(pts, mmsi),
+      ts: b.ts,
+      lat: b.lat,
+      lon: b.lon,
+      sogKn: c.sog,
+      cogBefore: c.cogBefore,
+      cogAfter: c.cogAfter,
+      cogDeltaDeg: c.delta,
+      turnRateDegPerMin: c.turnRate,
+      track,
+      nearby,
+    });
   }
 
   events.sort((a, b) => b.turnRateDegPerMin * b.sogKn - a.turnRateDegPerMin * a.sogKn);
@@ -482,6 +574,8 @@ const INTERCEPT_TRACK_PAD_MS = 12 * 60_000;
 /** Candidate-pair prefilter: grid cell and time bucket. */
 const INTERCEPT_GRID_NM = 0.5;
 const INTERCEPT_TIME_BUCKET_MS = 4 * 60_000;
+/** Positions to test per candidate pair: a meeting is minutes long, so this is plenty. */
+const INTERCEPT_MAX_SAMPLES = 240;
 const INTERCEPT_MIN_APPROACH_SOG_KN = 4;
 const INTERCEPT_MATCHED_COURSE_DEG = 35;
 const INTERCEPT_MATCHED_COURSE_SOG_KN = 3;
@@ -559,29 +653,84 @@ function maxSogBetween(pts: NoteworthyFix[], from: number, to: number): number {
   return max;
 }
 
+/** When two vessels shared a grid cell, widened to the span of every cell they shared. */
+type Encounter = { from: number; to: number };
+
 /** Candidate pairs that shared a grid cell within the same few minutes. */
-function candidatePairs(fixes: NoteworthyFix[]): Set<string> {
-  const buckets = new Map<string, Set<string>>();
+function candidatePairs(fixes: NoteworthyFix[]): Map<string, Encounter> {
+  const buckets = new Map<number, Map<string, Set<string>>>();
   for (const f of fixes) {
     const tb = Math.floor(f.ts / INTERCEPT_TIME_BUCKET_MS);
-    const key = `${tb}|${gridKey(f.lat, f.lon, INTERCEPT_GRID_NM)}`;
-    const set = buckets.get(key) ?? new Set<string>();
+    const cells = buckets.get(tb) ?? new Map<string, Set<string>>();
+    const cell = gridKey(f.lat, f.lon, INTERCEPT_GRID_NM);
+    const set = cells.get(cell) ?? new Set<string>();
     set.add(f.mmsi);
-    buckets.set(key, set);
+    cells.set(cell, set);
+    buckets.set(tb, cells);
   }
-  const pairs = new Set<string>();
-  for (const set of buckets.values()) {
-    if (set.size < 2) continue;
-    const list = [...set];
-    for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        const a = list[i]!;
-        const b = list[j]!;
-        pairs.add(a < b ? `${a}|${b}` : `${b}|${a}`);
+  const pairs = new Map<string, Encounter>();
+  for (const [tb, cells] of buckets) {
+    const from = tb * INTERCEPT_TIME_BUCKET_MS;
+    const to = from + INTERCEPT_TIME_BUCKET_MS;
+    for (const set of cells.values()) {
+      if (set.size < 2) continue;
+      const list = [...set];
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i]!;
+          const b = list[j]!;
+          const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+          const seen = pairs.get(key);
+          if (seen) {
+            if (from < seen.from) seen.from = from;
+            if (to > seen.to) seen.to = to;
+          } else {
+            pairs.set(key, { from, to });
+          }
+        }
       }
     }
   }
   return pairs;
+}
+
+/** Index of the first fix at or after `ts`. */
+function lowerBound(pts: NoteworthyFix[], ts: number): number {
+  let lo = 0;
+  let hi = pts.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (pts[mid]!.ts < ts) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * Timestamps to test a pair at. Only the window where they actually shared a cell matters,
+ * and the count is capped: sampling both tracks across a whole day for every candidate pair
+ * is what made this detector scale with traffic squared.
+ */
+function encounterSamples(
+  ptsA: NoteworthyFix[],
+  ptsB: NoteworthyFix[],
+  from: number,
+  to: number,
+): number[] {
+  const out: number[] = [];
+  for (const pts of [ptsA, ptsB]) {
+    for (let i = lowerBound(pts, from); i < pts.length && pts[i]!.ts <= to; i++) {
+      out.push(pts[i]!.ts);
+    }
+  }
+  out.sort((x, y) => x - y);
+  if (out.length <= INTERCEPT_MAX_SAMPLES) return out;
+  const stride = Math.ceil(out.length / INTERCEPT_MAX_SAMPLES);
+  const thinned: number[] = [];
+  for (let i = 0; i < out.length; i += stride) thinned.push(out[i]!);
+  const last = out[out.length - 1]!;
+  if (thinned[thinned.length - 1] !== last) thinned.push(last);
+  return thinned;
 }
 
 /**
@@ -596,20 +745,26 @@ export function detectInterceptions(fixes: NoteworthyFix[]): InterceptionEvent[]
 
   const events: InterceptionEvent[] = [];
 
-  for (const pair of candidatePairs(fixes)) {
+  for (const [pair, encounter] of candidatePairs(fixes)) {
     const [mmsiA, mmsiB] = pair.split("|") as [string, string];
     const ptsA = byMmsi.get(mmsiA);
     const ptsB = byMmsi.get(mmsiB);
     if (!ptsA || !ptsB || ptsA.length < 2 || ptsB.length < 2) continue;
 
-    const from = Math.max(ptsA[0]!.ts, ptsB[0]!.ts);
-    const to = Math.min(ptsA[ptsA.length - 1]!.ts, ptsB[ptsB.length - 1]!.ts);
+    // Only the run-up to the shared cell can hold the meeting, so search that, not the day.
+    const from = Math.max(
+      ptsA[0]!.ts,
+      ptsB[0]!.ts,
+      encounter.from - INTERCEPT_APPROACH_WINDOW_MS,
+    );
+    const to = Math.min(
+      ptsA[ptsA.length - 1]!.ts,
+      ptsB[ptsB.length - 1]!.ts,
+      encounter.to + INTERCEPT_APPROACH_WINDOW_MS,
+    );
     if (to <= from) continue;
 
-    const samples = [...ptsA, ...ptsB]
-      .map((p) => p.ts)
-      .filter((ts) => ts >= from && ts <= to)
-      .sort((x, y) => x - y);
+    const samples = encounterSamples(ptsA, ptsB, from, to);
 
     let best: { ts: number; nm: number; a: Interpolated; b: Interpolated } | null = null;
     for (const ts of samples) {

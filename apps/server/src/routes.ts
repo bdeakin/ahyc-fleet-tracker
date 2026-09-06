@@ -62,6 +62,17 @@ function refreshHealthSpan(): void {
   });
 }
 
+function memorySnapshot(): { rssMb: number; heapUsedMb: number; heapLimitMb: number } {
+  const mb = (bytes: number) => Math.round(bytes / 1048576);
+  const { rss, heapUsed, heapTotal } = process.memoryUsage();
+  const cap = process.env.NODE_OPTIONS?.match(/--max-old-space-size=(\d+)/)?.[1];
+  return {
+    rssMb: mb(rss),
+    heapUsedMb: mb(heapUsed),
+    heapLimitMb: cap ? Number(cap) : mb(heapTotal),
+  };
+}
+
 export async function registerRoutes(
   app: FastifyInstance,
   ais: AisIngestWorker,
@@ -87,6 +98,8 @@ export async function registerRoutes(
       /** False when SQLite is on the ephemeral container FS and will vanish on redeploy. */
       durableStorage: !onRailway || mounted || (railwayMount != null && config.dataDir === railwayMount),
       uptimeSec: Math.round(process.uptime()),
+      /** Resident and heap size in MB, so a memory kill can be seen coming. */
+      memory: memorySnapshot(),
       /** Null until the first background snapshot lands; never blocks the check. */
       trafficSpanMs: span?.trafficSpanMs ?? null,
       pointCount: span?.pointCount ?? null,

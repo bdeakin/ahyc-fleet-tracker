@@ -1,5 +1,26 @@
 # Version history
 
+## 0.9.12 — Memory: the deploy that ran out of it
+
+Measured against a 2.5 M-point database (roughly three times a busy harbour day at the 60 s ingest cadence):
+
+| | before | after |
+| --- | --- | --- |
+| `GET /api/tracks` (24 h, all vessels) | 14.9 s, ~500 MB of JSON, RSS 2.3 GB | 2.0 s, 3.5 MB, peak RSS 137 MB |
+| `GET /api/noteworthy?hours=24` | did not return in 10 min, RSS 930 MB | 0.44 s, peak RSS 185 MB |
+| `detectEvasiveManeuvers` alone | 133 s, +700 MB | 73 ms |
+| idle | 111 MB | 95 MB |
+| twelve heavy requests at once | untested — one was already fatal | peak RSS 216 MB |
+
+- Track queries thin to one fix per vessel per time bucket and stop at a row cap. Buckets are sized from the requested span, so a ten-minute trail and a 24 h vessel track are unchanged and only long windows coarsen; the all-vessel scrub, which returned every point in the window, now returns at most 24 000.
+- `detectEvasiveManeuvers` looked up nearby vessels by walking every other vessel's entire track, once per turn it found. Nearby fixes are now indexed by minute and grid cell, and only the strongest few turns get a track and a nearby list built for them.
+- `detectInterceptions` searched the whole day for each candidate pair; it now searches only the window where the pair actually shared a grid cell, with a sample cap.
+- The noteworthy fix loader thins to one fix per vessel per 15 s, caps at 60 000 fixes, and narrows its scan to about the span that will survive the cap instead of grouping a whole day of rows and discarding most of them.
+- Historical chart pyramids are cut during the Docker build and shipped in the image, so a container never runs libvips. sharp is also imported lazily now — it costs ~30 MB resident before doing any work, and with seeded tiles it is never loaded at all.
+- `NODE_OPTIONS=--max-old-space-size=384` in the image: uncapped, V8 sizes its heap from the host's memory rather than the container's limit, so a spike is killed instead of collected.
+- SQLite holds a 16 MB page cache and checkpoints before the WAL passes ~8 MB.
+- `/api/health` reports `memory` (RSS, heap used, heap limit), so the next memory kill can be seen coming.
+
 ## 0.9.11 — AMERICAN PRINCESS on the watch list
 
 - AMERICAN PRINCESS (367124840) is seeded onto the watch list at boot, so her track history is kept indefinitely rather than pruned with the rest of harbour traffic after 24 h. The seed is recorded in `settings`, so removing her in the app makes it stick.

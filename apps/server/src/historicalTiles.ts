@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import sharp, { type OverlayOptions } from "sharp";
+import type { OverlayOptions } from "sharp";
 import {
   HISTORICAL_CHARTS,
   HISTORICAL_TILE_SIZE,
@@ -29,11 +29,21 @@ import { config } from "./config.js";
  * Cutting a pyramid is the heaviest thing this server does: a few hundred megabytes of
  * libvips working set and every core it can get. On a small shared container that is enough
  * to starve health checks and trip the memory limit, so hold sharp to one thread and a small
- * cache. Tiles are written once and then read from the volume, so the slower cut costs
- * nothing after the first deploy.
+ * cache. It is also loaded on demand rather than at boot — libvips costs ~30 MB resident
+ * before it does any work, and a container with the seeded pyramids never cuts a tile.
  */
-sharp.concurrency(1);
-sharp.cache({ memory: 32, files: 8, items: 50 });
+let sharpModule: Promise<typeof import("sharp").default> | null = null;
+
+function loadSharp(): Promise<typeof import("sharp").default> {
+  if (!sharpModule) {
+    sharpModule = import("sharp").then(({ default: sharp }) => {
+      sharp.concurrency(1);
+      sharp.cache({ memory: 32, files: 8, items: 50 });
+      return sharp;
+    });
+  }
+  return sharpModule;
+}
 
 const TILE = HISTORICAL_TILE_SIZE;
 const TILE_QUALITY = 82;
@@ -90,16 +100,36 @@ function gridFor(chart: HistoricalChart, z: number): TileGrid {
   };
 }
 
-function chartCacheDir(chart: HistoricalChart): string {
-  return path.join(config.dataDir, "historical-tiles", chart.id);
+/**
+ * Tiles are read from two places: the pyramid cut into the image at build time, and the one
+ * on the data volume. Shipping a pre-cut seed is what keeps a small container from ever
+ * running libvips — a cut needs a few hundred megabytes of working set, which is enough to
+ * push a modest instance past its memory limit while it is also serving the map.
+ */
+function seedRoot(): string | null {
+  const seed = process.env.HISTORICAL_TILE_SEED_DIR;
+  return seed && existsSync(seed) ? seed : null;
 }
 
-function tilePath(chart: HistoricalChart, z: number, x: number, y: number): string {
-  return path.join(chartCacheDir(chart), String(z), String(x), `${y}.webp`);
+function writableRoot(): string {
+  return path.join(config.dataDir, "historical-tiles");
 }
 
-function manifestPath(chart: HistoricalChart): string {
-  return path.join(chartCacheDir(chart), "manifest.json");
+function tileRoots(): string[] {
+  const seed = seedRoot();
+  return seed ? [writableRoot(), seed] : [writableRoot()];
+}
+
+function chartCacheDir(chart: HistoricalChart, root = writableRoot()): string {
+  return path.join(root, chart.id);
+}
+
+function tilePath(chart: HistoricalChart, z: number, x: number, y: number, root = writableRoot()): string {
+  return path.join(chartCacheDir(chart, root), String(z), String(x), `${y}.webp`);
+}
+
+function manifestPath(chart: HistoricalChart, root = writableRoot()): string {
+  return path.join(chartCacheDir(chart, root), "manifest.json");
 }
 
 /** The scans live with the web app; in a container the built copy may be the only one. */
@@ -119,6 +149,7 @@ function sourceFile(chart: HistoricalChart): string | null {
 }
 
 async function writeTile(file: string, rgba: Buffer, width: number, height: number): Promise<void> {
+  const sharp = await loadSharp();
   await mkdir(path.dirname(file), { recursive: true });
   await sharp(rgba, { raw: { width, height, channels: 4 } })
     .webp({ quality: TILE_QUALITY, alphaQuality: 60 })
@@ -134,6 +165,7 @@ function hasContent(rgba: Buffer, offset: number, length: number): boolean {
 }
 
 async function renderNativeLevel(chart: HistoricalChart, z: number): Promise<void> {
+  const sharp = await loadSharp();
   const file = sourceFile(chart);
   if (!file) throw new Error(`missing scan for ${chart.id}`);
   const grid = gridFor(chart, z);
@@ -205,6 +237,7 @@ async function renderNativeLevel(chart: HistoricalChart, z: number): Promise<voi
 
 /** Each shallower tile is the four tiles below it, halved and stitched together. */
 async function reduceLevel(chart: HistoricalChart, z: number): Promise<void> {
+  const sharp = await loadSharp();
   const grid = gridFor(chart, z);
   for (let tileX = grid.xMin; tileX <= grid.xMax; tileX += 1) {
     for (let tileY = grid.yMin; tileY <= grid.yMax; tileY += 1) {
@@ -255,9 +288,9 @@ function boundsKey(chart: HistoricalChart): string {
   return [south, west, north, east].map((n) => n.toFixed(5)).join(",");
 }
 
-async function readManifest(chart: HistoricalChart): Promise<Manifest | null> {
+async function readManifest(chart: HistoricalChart, root: string): Promise<Manifest | null> {
   try {
-    const raw = await readFile(manifestPath(chart), "utf8");
+    const raw = await readFile(manifestPath(chart, root), "utf8");
     const parsed = JSON.parse(raw) as Manifest;
     if (parsed.version !== PYRAMID_VERSION) return null;
     return parsed.bounds === boundsKey(chart) ? parsed : null;
@@ -266,7 +299,15 @@ async function readManifest(chart: HistoricalChart): Promise<Manifest | null> {
   }
 }
 
-const building = new Map<string, Promise<boolean>>();
+/** The root holding a pyramid cut for the chart's current georeference, if any. */
+async function findPyramidRoot(chart: HistoricalChart): Promise<string | null> {
+  for (const root of tileRoots()) {
+    if (await readManifest(chart, root)) return root;
+  }
+  return null;
+}
+
+const building = new Map<string, Promise<string | null>>();
 
 async function buildPyramid(chart: HistoricalChart): Promise<boolean> {
   const nativeZoom = historicalNativeZoom(chart);
@@ -292,16 +333,18 @@ async function buildPyramid(chart: HistoricalChart): Promise<boolean> {
   return true;
 }
 
-/** Build the pyramid if it is missing; concurrent callers share one build. */
-export async function ensurePyramid(chart: HistoricalChart): Promise<boolean> {
-  if (await readManifest(chart)) return true;
+/** Build the pyramid if no root already has one; concurrent callers share one build. */
+export async function ensurePyramid(chart: HistoricalChart): Promise<string | null> {
+  const existing = await findPyramidRoot(chart);
+  if (existing) return existing;
   const running = building.get(chart.id);
   if (running) return running;
 
   const job = buildPyramid(chart)
+    .then(() => writableRoot())
     .catch((err) => {
       console.warn(`[historical] tiling failed for ${chart.id}:`, err);
-      return false;
+      return null;
     })
     .finally(() => building.delete(chart.id));
   building.set(chart.id, job);
@@ -316,9 +359,10 @@ export async function historicalTile(
 ): Promise<Buffer | null> {
   const chart = historicalChartById(chartId);
   if (!chart) return null;
-  if (!(await ensurePyramid(chart))) return null;
+  const root = await ensurePyramid(chart);
+  if (!root) return null;
   try {
-    return await readFile(tilePath(chart, z, x, y));
+    return await readFile(tilePath(chart, z, x, y, root));
   } catch {
     return null;
   }
@@ -337,7 +381,7 @@ export function startHistoricalTileWarmup(): void {
   const timer = setTimeout(async () => {
     for (const chart of HISTORICAL_CHARTS) {
       try {
-        if (await readManifest(chart)) continue;
+        if (await findPyramidRoot(chart)) continue;
         if (!sourceFile(chart)) {
           console.warn(`[historical] no scan on disk for ${chart.id}; skipping tiles`);
           continue;
