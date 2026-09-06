@@ -7,7 +7,7 @@ import fastifyStatic from "@fastify/static";
 import { AisIngestWorker } from "./aisWorker.js";
 import { AishubWorker } from "./aishubWorker.js";
 import { setBootError } from "./bootState.js";
-import { ensurePrimaryClubVessel } from "./bootstrap.js";
+import { ensurePrimaryClubVessel, ensureSeedWatchlist } from "./bootstrap.js";
 import { config, isMountPoint, paths } from "./config.js";
 import { closeDb, getDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
@@ -32,6 +32,7 @@ try {
   fs.mkdirSync(path.dirname(paths.db), { recursive: true });
   getDb();
   ensurePrimaryClubVessel();
+  ensureSeedWatchlist();
   startVesselProfileWorker(getDb);
 } catch (err) {
   // Keep listening so the failure is visible on /api/health instead of only in a log that

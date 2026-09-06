@@ -1492,6 +1492,16 @@ select {
   cursor: wait;
 }
 
+.watch-toggle-error {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: #f6c26b;
+}
+
+.watch-toggle-error a {
+  color: #5ec8ff;
+}
+
 .watch-toggle-note {
   margin: 0.15rem 0 0.35rem;
   font-size: 0.7rem;

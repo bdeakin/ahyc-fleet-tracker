@@ -1,5 +1,10 @@
 # Version history
 
+## 0.9.11 — AMERICAN PRINCESS on the watch list
+
+- AMERICAN PRINCESS (367124840) is seeded onto the watch list at boot, so her track history is kept indefinitely rather than pruned with the rest of harbour traffic after 24 h. The seed is recorded in `settings`, so removing her in the app makes it stick.
+- The "Add to watch list" button no longer fails silently. Changing the watch list needs an admin session, and without one the request was rejected and the error swallowed, so the button appeared to do nothing; it now says to sign in and links to the Admin page.
+
 ## 0.9.10 — Bigger locate button on phones
 
 - The GPS crosshair is a 44 px accent-blue circle on phones — a full thumb target and the most prominent control in the header, where before it was a 32 px icon indistinguishable from the help and admin links. Its styling had also been losing to `.kiosk-actions button`, a more specific selector, so the round shape and colour it was asking for never rendered anywhere.

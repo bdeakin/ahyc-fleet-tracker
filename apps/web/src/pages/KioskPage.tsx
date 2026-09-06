@@ -441,6 +441,7 @@ export function KioskPage() {
   const watchMmsisRef = useRef<Set<string>>(new Set());
   const [historySpan, setHistorySpan] = useState<TrackHistorySpan | null>(null);
   const [watchBusy, setWatchBusy] = useState(false);
+  const [watchError, setWatchError] = useState<"auth" | "failed" | null>(null);
   const windowStart = useMemo(() => rangeEnd - HOURS * 3600_000, [rangeEnd]);
   const scrubTs = windowStart + slider * 60_000;
 
@@ -1484,6 +1485,7 @@ export function KioskPage() {
     if (!selectedVessel || watchBusy) return;
     const mmsi = selectedVessel.mmsi;
     setWatchBusy(true);
+    setWatchError(null);
     try {
       if (selectedIsWatched) {
         await api.removeWatch(mmsi);
@@ -1499,8 +1501,9 @@ export function KioskPage() {
       }
       // Refresh markers so watched styling / filters update.
       drawMarkers(liveVesselsRef.current);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // Changing the watch list needs an admin session; failing silently just looked broken.
+      setWatchError(String(err).includes("401") ? "auth" : "failed");
     } finally {
       setWatchBusy(false);
     }
@@ -2190,6 +2193,17 @@ export function KioskPage() {
             >
               {selectedIsWatched ? "Remove from watch list" : "Add to watch list"}
             </button>
+          )}
+          {watchError && (
+            <p className="watch-toggle-error" role="status">
+              {watchError === "auth" ? (
+                <>
+                  Sign in on the <Link to="/admin">Admin</Link> page to change the watch list.
+                </>
+              ) : (
+                <>Could not update the watch list — try again.</>
+              )}
+            </p>
           )}
           {selectedVessel.registered && (
             <p className="watch-toggle-note">Club vessel — tracks kept indefinitely.</p>

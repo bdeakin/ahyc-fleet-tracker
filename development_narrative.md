@@ -1,5 +1,11 @@
 # Development narrative
 
+## 2026-09-06 — Adding a boat to a list you cannot reach
+
+Adding AMERICAN PRINCESS to the watch list sounds like a one-line database write, and it would be, on a database this side of the internet. The list lives in SQLite on the deployment's volume, so the change had to travel as code: a seed in the boot path that adds her once. "Once" is the important part — a seed that runs every boot would quietly resurrect a boat somebody had deliberately removed, so each entry writes a marker into the `settings` table and skips itself thereafter. Verified both directions: she appears on a fresh boot, and after deleting her the list stays empty across a restart.
+
+The more interesting find was why this was asked of me at all. The detail pane has an "Add to watch list" button; changing the list requires an admin session, and without one the request is rejected with a 401 that the click handler caught and discarded. So the button did nothing, said nothing, and left the impression it was broken. It now explains that the watch list needs an admin sign-in and links to the page where you do it.
+
 ## 2026-09-06 — The button that was never wearing its own clothes
 
 Making the locate button bigger on phones turned up the same CSS trap as the location read-out: the rule was written as `.kiosk-locate-btn`, but the header styles it against are `.kiosk-actions button`, which is the more specific selector and wins no matter which comes later in the file. So the round shape, the accent colour, and the fill it asked for had never rendered — only the size, which nothing else was setting. Scoped as `.kiosk-actions .kiosk-locate-btn` it applies, and on a phone it becomes a 44 px accent-blue circle: a full thumb target, and the only control in the header that does not look like a quiet link. That is the right emphasis, because on a phone it is the one thing you press underway.
