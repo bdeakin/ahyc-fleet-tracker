@@ -246,6 +246,8 @@ export type ListLiveOptions = {
   bbox?: LiveBbox;
   /** Include active registry vessels even if outside the bbox (default true with bbox). */
   includeRegisteredOutside?: boolean;
+  /** Always return these mmsis, in or out of the bbox (tray cards, open detail pane). */
+  pinned?: string[];
 };
 
 function rowToLive(
@@ -295,15 +297,27 @@ export function listLiveStates(db: Db, opts: ListLiveOptions = {}): VesselLiveSt
   let rows: Row[];
   if (bbox) {
     const includeRegistered = opts.includeRegisteredOutside !== false;
+    // Pinned mmsis come back regardless of the viewport so cards the user parked in the
+    // tray keep updating after the map is panned away from them.
+    const pinned = [...new Set((opts.pinned ?? []).filter((m) => /^\d{7,9}$/.test(m)))].slice(0, 40);
+    const pinnedFilter = pinned.length > 0 ? `OR vs.mmsi IN (${pinned.map(() => "?").join(",")})` : "";
     rows = db
       .prepare(
         `SELECT vs.mmsi, vs.lat, vs.lon, vs.sog, vs.cog, vs.heading, vs.ts, vs.source
          FROM vessel_state vs
          LEFT JOIN vessels v ON v.mmsi = vs.mmsi AND v.active = 1
          WHERE (vs.lat BETWEEN ? AND ? AND vs.lon BETWEEN ? AND ?)
-            OR (? = 1 AND v.mmsi IS NOT NULL)`,
+            OR (? = 1 AND v.mmsi IS NOT NULL)
+            ${pinnedFilter}`,
       )
-      .all(bbox.minLat, bbox.maxLat, bbox.minLon, bbox.maxLon, includeRegistered ? 1 : 0) as Row[];
+      .all(
+        bbox.minLat,
+        bbox.maxLat,
+        bbox.minLon,
+        bbox.maxLon,
+        includeRegistered ? 1 : 0,
+        ...pinned,
+      ) as Row[];
   } else {
     rows = db.prepare("SELECT * FROM vessel_state").all() as Row[];
   }

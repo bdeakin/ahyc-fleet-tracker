@@ -5,6 +5,7 @@ import type {
   NoteworthyEvent,
   Vessel,
   VesselLiveState,
+  VesselPhoto,
   VesselProfile,
   TrackPoint,
 } from "@ahyc/shared";
@@ -134,7 +135,10 @@ export const api = {
     return res.json() as Promise<AdminSession>;
   },
   vessels: () => json<Vessel[]>("/api/vessels"),
-  live: (bbox?: { minLat: number; minLon: number; maxLat: number; maxLon: number }) => {
+  live: (
+    bbox?: { minLat: number; minLon: number; maxLat: number; maxLon: number },
+    pinned?: string[],
+  ) => {
     if (!bbox) return json<VesselLiveState[]>("/api/live");
     const q = new URLSearchParams({
       minLat: String(bbox.minLat),
@@ -142,9 +146,16 @@ export const api = {
       maxLat: String(bbox.maxLat),
       maxLon: String(bbox.maxLon),
     });
+    if (pinned && pinned.length > 0) q.set("pinned", pinned.join(","));
     return json<VesselLiveState[]>(`/api/live?${q}`);
   },
   vesselProfile: (mmsi: string) => json<VesselProfile>(`/api/vessels/profile/${mmsi}`),
+  vesselPhoto: (mmsi: string, name?: string | null) => {
+    const q = name ? `?name=${encodeURIComponent(name)}` : "";
+    return json<VesselPhoto>(`/api/vessels/photo/${mmsi}${q}`);
+  },
+  /** Image bytes are proxied by the server, so the kiosk stays on one origin. */
+  vesselPhotoImageUrl: (mmsi: string) => `/api/vessels/photo/${mmsi}/image`,
   charts: () => json<ChartLayer[]>("/api/charts"),
   noteworthy: (hours = 24) => json<NoteworthyBundle>(`/api/noteworthy?hours=${hours}`),
   syncVessels: () => {

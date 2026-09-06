@@ -32,6 +32,7 @@ import {
   type GeoBounds,
   type NoteworthyEvent,
   type VesselLiveState,
+  type VesselPhoto,
   type VesselProfile,
 } from "@ahyc/shared";
 import { api, liveSocket, type AishubStatus, type TrackHistorySpan } from "../api";
@@ -243,6 +244,9 @@ export function KioskPage() {
   const [trackRangeHours, setTrackRangeHours] = useState(TRACK_HOURS);
   const [trackPointCount, setTrackPointCount] = useState(0);
   const [vesselProfile, setVesselProfile] = useState<VesselProfile | null>(null);
+  const [vesselPhoto, setVesselPhoto] = useState<VesselPhoto | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [photoBroken, setPhotoBroken] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [mapZoom, setMapZoom] = useState(12);
   const [mapBounds, setMapBounds] = useState<GeoBounds | null>(null);
@@ -278,8 +282,23 @@ export function KioskPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [helpOpen]);
 
+  /*
+   * The live feed is viewport-scoped, but tray cards and the open detail pane must keep
+   * updating after the map is panned or flown elsewhere, so those MMSIs ride along as
+   * "pinned" on every request.
+   */
+  const pinnedMmsisRef = useRef<string[]>([]);
+  useEffect(() => {
+    const pinned = new Set<string>();
+    for (const stack of trayStacks) for (const mmsi of stack) pinned.add(mmsi);
+    if (selectedMmsi) pinned.add(selectedMmsi);
+    pinnedMmsisRef.current = [...pinned];
+  }, [trayStacks, selectedMmsi]);
+
   const trayCapacityRef = useRef(1);
   const trayMeasureRef = useRef<HTMLDivElement | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const layersPanelRef = useRef<HTMLDivElement | null>(null);
   const [alertMmsis, setAlertMmsis] = useState<Set<string>>(() => new Set());
   const alertMmsisRef = useRef<Set<string>>(new Set());
   const [aishubStatus, setAishubStatus] = useState<AishubStatus | null>(null);
@@ -442,7 +461,7 @@ export function KioskPage() {
     const reqId = ++viewportReqRef.current;
     const bbox = mapBbox(map);
     api
-      .live(bbox)
+      .live(bbox, pinnedMmsisRef.current)
       .then((vessels) => {
         if (reqId !== viewportReqRef.current) return;
         drawMarkers(vessels);
@@ -590,6 +609,36 @@ export function KioskPage() {
     () => noteworthyEvents.find((e) => e.id === noteworthyId) ?? null,
     [noteworthyEvents, noteworthyId],
   );
+
+  /*
+   * The bottom ribbon grows with AIS hint lines and the layer panel grows when an event is
+   * selected, so the left-hand stack is positioned from measured heights instead of guesses.
+   * Without this the pickers ended up underneath the ribbon and were unreachable.
+   */
+  useEffect(() => {
+    const targets = [
+      { el: timelineRef.current, prop: "--ribbon-h" },
+      { el: layersPanelRef.current, prop: "--layers-h" },
+    ].filter((t): t is { el: HTMLDivElement; prop: string } => Boolean(t.el));
+    if (targets.length === 0 || typeof ResizeObserver === "undefined") return;
+
+    const apply = () => {
+      for (const { el, prop } of targets) {
+        document.documentElement.style.setProperty(
+          prop,
+          `${Math.round(el.getBoundingClientRect().height)}px`,
+        );
+      }
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    for (const { el } of targets) observer.observe(el);
+    window.addEventListener("resize", apply);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, [aisHint, historySpan, selectedNoteworthy]);
 
   useEffect(() => {
     const load = () =>
@@ -939,6 +988,40 @@ export function KioskPage() {
       window.clearInterval(id);
     };
   }, [live, selectedMmsi, trackRangeHours, rangeEnd, vesselCount, mapZoom]);
+
+  /*
+   * Photo lookup runs on click only, and the server scrapes it fresh each time (nothing is
+   * stored locally), so the pane shows a placeholder while the public sources are queried.
+   */
+  useEffect(() => {
+    if (!selectedMmsi) {
+      setVesselPhoto(null);
+      setPhotoBroken(false);
+      setPhotoLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setVesselPhoto(null);
+    setPhotoBroken(false);
+    setPhotoLoading(true);
+    api
+      .vesselPhoto(selectedMmsi, selectedVessel?.name ?? null)
+      .then((photo) => {
+        if (cancelled) return;
+        setVesselPhoto(photo);
+      })
+      .catch(() => {
+        if (!cancelled) setVesselPhoto(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPhotoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // The name is only a lookup hint; re-running on every live update would spam the sources.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMmsi]);
 
   useEffect(() => {
     if (!selectedMmsi) {
@@ -1349,7 +1432,7 @@ export function KioskPage() {
           </button>
         )}
       </div>
-      <div className="map-layers" role="region" aria-label="Chart and event layers">
+      <div className="map-layers" role="region" aria-label="Chart and event layers" ref={layersPanelRef}>
         <div className="map-layers-row">
           <label className="map-layers-field">
             <span>Chart</span>
@@ -1624,6 +1707,32 @@ export function KioskPage() {
               ×
             </button>
           </header>
+          {photoLoading && <p className="vessel-photo-note">Looking for a photo…</p>}
+          {!photoLoading && vesselPhoto?.status === "ok" && !photoBroken && (
+            <figure className="vessel-photo">
+              <img
+                src={api.vesselPhotoImageUrl(selectedVessel.mmsi)}
+                alt={`${selectedVessel.name || selectedVessel.mmsi} photo`}
+                loading="lazy"
+                onError={() => setPhotoBroken(true)}
+              />
+              <figcaption>
+                {vesselPhoto.sourceUrl ? (
+                  <a href={vesselPhoto.sourceUrl} target="_blank" rel="noreferrer noopener">
+                    {vesselPhoto.credit ?? vesselPhoto.source}
+                  </a>
+                ) : (
+                  (vesselPhoto.credit ?? vesselPhoto.source)
+                )}
+                {vesselPhoto.match === "name" && (
+                  <span className="vessel-photo-hedge" title="Matched on vessel name, not MMSI">
+                    {" "}
+                    · likely match
+                  </span>
+                )}
+              </figcaption>
+            </figure>
+          )}
           <div className="track-range" role="group" aria-label="Track history range">
             {TRACK_RANGE_OPTIONS.map((opt) => (
               <button
@@ -1765,7 +1874,7 @@ export function KioskPage() {
         </aside>
       )}
       <div ref={mapRef} />
-      <div className="timeline">
+      <div className="timeline" ref={timelineRef}>
         <label>
           <span>
             {live ? "Live" : "Replay"}

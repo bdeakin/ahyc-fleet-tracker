@@ -1,5 +1,12 @@
 # Version history
 
+## 0.9.1 — Vessel photos by MMSI
+
+- Clicking a vessel now looks up a **photo from public sources using the MMSI**: VesselFinder's ship page first, then Wikidata by IMO and Wikimedia Commons by name. The pane shows the photo with its credit and licence, and labels name-only matches as a "likely match".
+- Photos are never stored locally — lookups and image bytes sit in short-lived process memory, and the kiosk loads them through `GET /api/vessels/photo/:mmsi/image` so there is no mixed-content or hotlink trouble.
+- Fixed: tray cards and the open detail pane no longer go blank when the map moves away from those vessels — `GET /api/live` takes a `pinned` list that bypasses the viewport filter.
+- Fixed: the vessel detail pane no longer covers the search results, so a second vessel can be added to the tray while one is open.
+
 ## 0.9.0 — NOAA paper-style charts, noteworthy traffic, CPA
 
 - New default chart: **NOAA chart (paper style · soundings in feet)** — ENC rendered through the Maritime Chart Service with paper-chart symbols, plain area boundaries, four depth shades at 12 / 30 / 60 ft, and labelled contours. The all-detail ENC display stays available as a second option.

@@ -70,6 +70,22 @@ export type VesselProfile = {
   scrapedAt: number | null;
 };
 
+/** A photo found for a vessel on a public site. Looked up on demand, never stored locally. */
+export type VesselPhoto = {
+  mmsi: string;
+  status: "ok" | "none" | "error";
+  /** How confident the match is: keyed on MMSI, on IMO, or on the vessel name alone. */
+  match: "mmsi" | "imo" | "name" | null;
+  source: string | null;
+  sourceUrl: string | null;
+  credit: string | null;
+  license: string | null;
+  caption: string | null;
+  /** Upstream image URL; the kiosk loads it through the server proxy instead. */
+  imageUrl: string | null;
+  fetchedAt: number;
+};
+
 export type BBox = {
   minLat: number;
   minLon: number;

@@ -10,6 +10,7 @@ import {
   scrapeAndStoreProfile,
   ensureVesselProfileQueued,
 } from "./vesselProfiles.js";
+import { getVesselPhoto, getVesselPhotoBytes } from "./vesselPhotos.js";
 import { config, isMountPoint, paths } from "./config.js";
 import { availableSeasons, listAdventureOptions } from "./trips.js";
 import {
@@ -274,9 +275,10 @@ export async function registerRoutes(
       maxLat?: string;
       maxLon?: string;
       includeRegistered?: string;
+      pinned?: string;
     };
   }>("/api/live", async (req) => {
-    const { minLat, minLon, maxLat, maxLon, includeRegistered } = req.query;
+    const { minLat, minLon, maxLat, maxLon, includeRegistered, pinned } = req.query;
     const nums = [minLat, minLon, maxLat, maxLon].map((v) => (v != null ? Number(v) : NaN));
     const hasBbox = nums.every((n) => Number.isFinite(n));
     if (hasBbox) {
@@ -289,6 +291,7 @@ export async function registerRoutes(
           maxLon: Math.max(west, east),
         },
         includeRegisteredOutside: includeRegistered !== "0",
+        pinned: pinned ? pinned.split(",").map((m) => m.trim()).filter(Boolean) : undefined,
       });
     }
     return listLiveStates(getDb());
@@ -302,6 +305,30 @@ export async function registerRoutes(
     const profile = getVesselProfile(db, mmsi);
     if (!profile) return { mmsi, status: "pending" as const, name: null };
     return profile;
+  });
+
+  app.get<{ Params: { mmsi: string }; Querystring: { name?: string; refresh?: string } }>(
+    "/api/vessels/photo/:mmsi",
+    async (req, reply) => {
+      const mmsi = String(req.params.mmsi ?? "").trim();
+      if (!/^\d{7,9}$/.test(mmsi)) return reply.code(400).send({ error: "bad_mmsi" });
+      const photo = await getVesselPhoto(getDb(), mmsi, {
+        name: req.query.name ?? null,
+        refresh: req.query.refresh === "1",
+      });
+      reply.header("Cache-Control", "public, max-age=900");
+      return photo;
+    },
+  );
+
+  app.get<{ Params: { mmsi: string } }>("/api/vessels/photo/:mmsi/image", async (req, reply) => {
+    const mmsi = String(req.params.mmsi ?? "").trim();
+    if (!/^\d{7,9}$/.test(mmsi)) return reply.code(400).send({ error: "bad_mmsi" });
+    const image = await getVesselPhotoBytes(getDb(), mmsi);
+    if (!image) return reply.code(404).send({ error: "no_photo" });
+    reply.header("Content-Type", image.contentType);
+    reply.header("Cache-Control", "public, max-age=3600");
+    return reply.send(image.body);
   });
 
   app.post<{ Params: { mmsi: string } }>("/api/vessels/profile/:mmsi/refresh", async (req, reply) => {

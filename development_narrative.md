@@ -1,5 +1,13 @@
 # Development narrative
 
+## 2026-09-06 — A photo for the ship you tapped
+
+Asked whether a vessel photo could be scraped by MMSI, the answer turned out to be yes, but only from a few places. MarineTraffic's photo endpoint sits behind Cloudflare (522s), ShipSpotting returns 403 to anything without a browser session, and Wikidata's MMSI property has almost no coverage. What does work is VesselFinder's ship page, which embeds a `main-photo` image keyed on the MMSI and falls back to a stock illustration under `/images/` when nobody has contributed one — that placeholder is easy to detect and reject. Behind it, Wikidata by IMO leads to a Commons file with a real licence and author, and a Commons full-text search on the vessel name is the last resort. Name search is genuinely unreliable: searching "PILOT AMERICA" surfaces a 19th-century pilot schooner, and "Queen Mary 2" first offers a museum model, so a hit only counts when the name appears verbatim in the file title and the title is not obviously a model, drawing or souvenir. Those matches are flagged in the UI as a likely match rather than presented as fact.
+
+Nothing is persisted, per the request. Lookups are memoised in process memory (12h for hits, 2h for misses) and the last two dozen images are cached the same way, so a redeploy just looks them up again. The kiosk loads the image from our own server rather than the upstream URL: one origin, no mixed content, and the referer and user-agent are ours to set.
+
+Two bugs surfaced while testing this against real clicks. Pinning two vessels in the tray and then flying to one of them emptied the tray, because the live feed is viewport-scoped and cards only render for vessels in that response; `/api/live` now takes a `pinned` list that ignores the bounding box. And with a vessel pane open, the search result list underneath it was unclickable, which made a second card impossible to add.
+
 ## 2026-09-06 — Charts that look like charts
 
 The kiosk wanted the look of a NOAA paper chart: soundings, depth tints, magenta aids, buff land. NOAA cancelled its raster charts, so the closest live source is the ENC data rendered through NOAA's Maritime Chart Service, which accepts S-52 mariner settings per request. Comparing renders against a paper sheet of Sandy Hook, two settings did most of the work: dropping the `OTHER` display category (that is where the hatching, data-quality boxes and AIO overlays come from) and asking for paper-chart point symbols with plain area boundaries. Four depth shades at 12 / 30 / 60 ft in feet finish it, matching the New York Harbor sheets. The layer is now the default; the full ECDIS display is still selectable.
