@@ -64,7 +64,8 @@ Kiosk checkboxes filter markers by source (Radio / AISHub / AISStream).
 
 ## Charts
 
-- Default operational basemap: Esri World Ocean Base + Ocean Reference (bathymetry shading and coastal/place labels without dense chart notation). Native zoom capped (~z13) with Leaflet overzoom so blank “Map data not yet available” tiles are avoided; optional OpenSeaMap seamark overlay for buoys/lights.
+- Default operational basemap: **Carto Voyager** (sharp coast/place names through harbor zoom) + OpenSeaMap seamarks for buoys/lights. Set `CARTO_API_KEY` so tiles use `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=…`; without it, the public `{s}.basemaps.cartocdn.com` CDN is used.
+- Regional overview: Esri World Ocean Base + Ocean Reference (bathymetry). Native zoom capped (~z13) with Leaflet overzoom; optional OpenSeaMap seamark overlay.
 - Optional full NOAA Chart Display Service WMS (selectable in the kiosk).
 - Optional offline: MBTiles files in `data/charts`, served as XYZ with TMS→XYZ conversion (Pi).
 - `ChartLayer` kinds: `xyz` (one or more tile URL templates), `noaa-wms`, `mbtiles`.

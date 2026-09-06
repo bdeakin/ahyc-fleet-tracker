@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import type { ChartLayer } from "@ahyc/shared";
 import {
   CARTO_ATTRIBUTION,
-  CARTO_VOYAGER,
+  cartoVoyagerUrl,
   ESRI_OCEAN_ATTRIBUTION,
   ESRI_OCEAN_BASE,
   ESRI_OCEAN_MAX_NATIVE_ZOOM,
@@ -12,7 +12,7 @@ import {
   OPENSEAMAP_ATTRIBUTION,
   OPENSEAMAP_SEAMARK,
 } from "@ahyc/shared";
-import { paths } from "./config.js";
+import { config, paths } from "./config.js";
 
 export function ensureChartDir() {
   fs.mkdirSync(paths.charts, { recursive: true });
@@ -20,6 +20,16 @@ export function ensureChartDir() {
 
 export function listChartLayers(): ChartLayer[] {
   ensureChartDir();
+  const cartoUrl = cartoVoyagerUrl(config.cartoApiKey);
+  const cartoTile: { url: string; subdomains?: string; maxNativeZoom: number; maxZoom: number } = {
+    url: cartoUrl,
+    maxNativeZoom: 20,
+    maxZoom: 20,
+  };
+  // Public CDN uses `{s}` subdomains; keyed URL is a single host.
+  if (!config.cartoApiKey.trim()) {
+    cartoTile.subdomains = "abcd";
+  }
   const layers: ChartLayer[] = [
     {
       id: "harbor-clean",
@@ -27,12 +37,7 @@ export function listChartLayers(): ChartLayer[] {
       label: "Harbor (sharp coast + buoys / lights)",
       // Sharp through marina zoom; OpenSeaMap adds buoys/beacons/lights without NOAA clutter.
       urls: [
-        {
-          url: CARTO_VOYAGER,
-          subdomains: "abcd",
-          maxNativeZoom: 20,
-          maxZoom: 20,
-        },
+        cartoTile,
         {
           url: OPENSEAMAP_SEAMARK,
           maxNativeZoom: 18,

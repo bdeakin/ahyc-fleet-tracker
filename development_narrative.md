@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-09-06 — Carto API key for harbor Voyager tiles
+
+Carto’s public Voyager CDN is fine for light local use but production needs an authenticated basemap URL. The harbor layer now reads `CARTO_API_KEY` and serves `…/voyager/{z}/{x}/{y}.png?key=…` (no subdomain host) when set; otherwise it keeps the public `{s}.basemaps.cartocdn.com` template.
+
 ## 2026-09-06 — Live last-report age on vessel cards
 
 A static “Updated” clock on the detail pane was hard to read at a glance on the kiosk. It is now a **Last report** field that counts up every second from the vessel’s latest AIS timestamp (tray cards show the same age). Absolute time remains available on hover.

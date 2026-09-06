@@ -152,9 +152,21 @@ export const AHYC_CENTER = { lat: 40.4185, lon: -74.0385 } as const;
 /**
  * Carto Voyager — sharp through harbor zoom (~z18). Clean land/water and place names
  * without NOAA chart clutter. Pair with OpenSeaMap seamarks for buoys/lights.
+ *
+ * Public CDN (rate-limited / may require a key in production):
+ *   https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png
+ * Keyed basemap (Railway: CARTO_API_KEY):
+ *   https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=…
  */
 export const CARTO_VOYAGER =
   "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+
+/** Build a Voyager XYZ template; when `apiKey` is set, use the authenticated endpoint (no `{s}`). */
+export function cartoVoyagerUrl(apiKey?: string | null): string {
+  const key = apiKey?.trim();
+  if (!key) return CARTO_VOYAGER;
+  return `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}`;
+}
 
 export const CARTO_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';

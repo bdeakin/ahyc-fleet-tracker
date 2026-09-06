@@ -39,10 +39,11 @@ Service → **Variables** → add:
 | Variable | Value |
 |----------|--------|
 | `AISSTREAM_API_KEY` | your AISStream key |
+| `CARTO_API_KEY` | Carto Basemaps key (Voyager harbor tiles) |
 | `LOCAL_ADMIN_TOKEN` | long random string (not `dev-admin-token`) |
 | `DATA_DIR` | `/data` |
 
-Leave all `SUPABASE_*` variables empty for now. Railway sets `PORT` automatically.
+Leave all `SUPABASE_*` variables empty for now. Railway sets `PORT` automatically. Without `CARTO_API_KEY`, the harbor layer falls back to the public Carto CDN (may be rate-limited).
 
 ### 5. Open the app
 

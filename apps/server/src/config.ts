@@ -18,6 +18,8 @@ export const config = {
   host: process.env.HOST ?? "0.0.0.0",
   dataDir: path.resolve(root, process.env.DATA_DIR ?? "./data"),
   aisstreamApiKey: process.env.AISSTREAM_API_KEY ?? "",
+  /** Carto Basemaps API key for Voyager tiles (Railway: CARTO_API_KEY). */
+  cartoApiKey: process.env.CARTO_API_KEY ?? "",
   /** Shared secret for POST /api/ais/ingest (Pi AIS Dispatcher forwarder). */
   aisIngestToken: process.env.AIS_INGEST_TOKEN ?? "",
   /** AISHub username (Railway: AISHUB_USERNAME). Enables daily NE bbox + MMSI watch. */

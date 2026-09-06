@@ -1,5 +1,10 @@
 # Version history
 
+## 0.8.12 — Carto Voyager API key for harbor basemap
+
+- Harbor chart layer uses `CARTO_API_KEY` when set: `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=…`.
+- Without the key, falls back to the public `{s}.basemaps.cartocdn.com` CDN.
+
 ## 0.8.11 — Last-report age counter on vessel cards
 
 - Vessel detail pane replaces the static **Updated** timestamp with a live **Last report** up-counter (time since the latest AIS point).
