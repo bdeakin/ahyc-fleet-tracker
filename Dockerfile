@@ -44,4 +44,7 @@ COPY --from=build /app/apps ./apps
 
 EXPOSE 8787
 
-CMD ["npm", "run", "start"]
+# node directly, not `npm run start`: npm does not forward SIGTERM to the server and exits
+# non-zero when the platform stops the container, which reads as a crash and triggers a
+# restart loop.
+CMD ["node", "apps/server/dist/index.js"]

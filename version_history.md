@@ -1,5 +1,15 @@
 # Version history
 
+## 0.9.9 — Deploy hardening
+
+- The container now runs `node` directly instead of `npm run start`. npm does not pass SIGTERM to the server and exits non-zero when the platform stops the container, which is what the deploy log showed (`npm error signal SIGTERM`, `command failed`) and what an ON_FAILURE restart policy reads as a crash.
+- SIGTERM and SIGINT close Fastify, stop the AIS workers, and close SQLite so the WAL is checkpointed onto the volume; a `setTimeout` guarantees the process is gone inside the platform's grace period either way.
+- `/api/health` no longer walks every track point on the request path. The storage diagnostics come from a snapshot refreshed in the background at most once a minute, so the check answers in about a millisecond regardless of how much history the volume holds.
+- Boot failures (an unwritable volume, a corrupt database) no longer kill the process before it can say why. The server listens anyway and `/api/health` returns 503 with the exact error, so a broken deploy is never promoted but is diagnosable from a phone.
+- Unhandled rejections and uncaught exceptions are logged instead of taking the server down, so a failed background scrape or tile cut cannot end the process.
+- Historical chart tiling now starts 45 s after the server is listening (was 5 s after process start), holds sharp to one thread and a 32 MB cache, and pauses between charts. Measured: five pyramids cut with health responses steady at ~1 ms and peak RSS 233 MB. `HISTORICAL_TILE_WARMUP=0` skips it entirely.
+- `healthcheckTimeout` raised from 30 s to 120 s to cover a cold start that opens SQLite on a volume and runs migrations.
+
 ## 0.9.8 — Snap to my location
 
 - A crosshair button beside the help button puts the viewer on the chart: one GPS fix per press, a blue dot inside its accuracy circle, and the chart flown to it without ever zooming out from a closer view. The read-out gives the accuracy in metres and the distance from the club, and blocked, timed-out, insecure-context, and no-geolocation cases each say what happened rather than failing silently.

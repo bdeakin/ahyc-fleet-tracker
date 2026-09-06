@@ -6,20 +6,39 @@ import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import { AisIngestWorker } from "./aisWorker.js";
 import { AishubWorker } from "./aishubWorker.js";
+import { setBootError } from "./bootState.js";
 import { ensurePrimaryClubVessel } from "./bootstrap.js";
 import { config, isMountPoint, paths } from "./config.js";
-import { getDb } from "./db.js";
+import { closeDb, getDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
 import { listLiveStates, pruneTrafficHistory } from "./tracks.js";
 import { startVesselProfileWorker } from "./vesselProfiles.js";
 import { startHistoricalTileWarmup } from "./historicalTiles.js";
 
-fs.mkdirSync(paths.charts, { recursive: true });
-fs.mkdirSync(path.dirname(paths.db), { recursive: true });
-getDb();
-ensurePrimaryClubVessel();
-startVesselProfileWorker(getDb);
-startHistoricalTileWarmup();
+/*
+ * A rejected promise in a background worker — a websocket reconnect, a scrape, a tile cut —
+ * would otherwise take the whole server down with it, and on a platform that restarts on
+ * failure that reads as an app that crashes on every deploy. Log and keep serving.
+ */
+process.on("unhandledRejection", (reason) => {
+  console.error("[ahyc] unhandled rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[ahyc] uncaught exception:", err);
+});
+
+try {
+  fs.mkdirSync(paths.charts, { recursive: true });
+  fs.mkdirSync(path.dirname(paths.db), { recursive: true });
+  getDb();
+  ensurePrimaryClubVessel();
+  startVesselProfileWorker(getDb);
+} catch (err) {
+  // Keep listening so the failure is visible on /api/health instead of only in a log that
+  // scrolls past between restarts.
+  setBootError(err);
+  console.error("[ahyc] boot failed — serving diagnostics only:", err);
+}
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
@@ -85,6 +104,49 @@ console.log(`[ahyc] listening on http://${config.host}:${config.port}`);
 }
 ais.start();
 aishub.start();
+
+/*
+ * Cut any missing chart pyramids only once the server is up and answering, and well past
+ * the platform's health-check window: the work is CPU-bound and a shared vCPU has little
+ * left over while it runs.
+ */
+startHistoricalTileWarmup();
+
+/*
+ * Railway stops a container with SIGTERM. Unhandled, it killed the process mid-write and
+ * left SQLite's WAL to be recovered on the next boot; paired with an `npm run start`
+ * entrypoint it also reported a non-zero exit, which an ON_FAILURE restart policy reads as
+ * a crash.
+ */
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[ahyc] ${signal} received — shutting down`);
+  // Never let a wedged socket hold the container past the platform's grace period.
+  const force = setTimeout(() => process.exit(0), 8000);
+  force.unref();
+  try {
+    ais.stop();
+    aishub.stop();
+  } catch (err) {
+    console.warn("[ahyc] worker stop failed", err);
+  }
+  try {
+    await app.close();
+  } catch (err) {
+    console.warn("[ahyc] server close failed", err);
+  }
+  try {
+    closeDb();
+  } catch (err) {
+    console.warn("[ahyc] database close failed", err);
+  }
+  process.exit(0);
+}
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => void shutdown(signal));
+}
 
 // Drop non-registered harbor traffic older than TRAFFIC_RETENTION_HOURS (default 24h).
 function runTrafficPrune() {

@@ -25,6 +25,16 @@ import { config } from "./config.js";
  * below, which is both cheap and exactly aligned with the tile grid.
  */
 
+/*
+ * Cutting a pyramid is the heaviest thing this server does: a few hundred megabytes of
+ * libvips working set and every core it can get. On a small shared container that is enough
+ * to starve health checks and trip the memory limit, so hold sharp to one thread and a small
+ * cache. Tiles are written once and then read from the volume, so the slower cut costs
+ * nothing after the first deploy.
+ */
+sharp.concurrency(1);
+sharp.cache({ memory: 32, files: 8, items: 50 });
+
 const TILE = HISTORICAL_TILE_SIZE;
 const TILE_QUALITY = 82;
 const PYRAMID_VERSION = 1;
@@ -319,14 +329,27 @@ export async function historicalTile(
  * is not the one who waits for it. Sequential and lazy — cached pyramids cost nothing.
  */
 export function startHistoricalTileWarmup(): void {
-  setTimeout(async () => {
+  if (process.env.HISTORICAL_TILE_WARMUP === "0") {
+    console.log("[historical] tile warmup disabled (HISTORICAL_TILE_WARMUP=0)");
+    return;
+  }
+  const delayMs = Number(process.env.HISTORICAL_TILE_WARMUP_DELAY_MS ?? 45_000);
+  const timer = setTimeout(async () => {
     for (const chart of HISTORICAL_CHARTS) {
-      if (await readManifest(chart)) continue;
-      if (!sourceFile(chart)) {
-        console.warn(`[historical] no scan on disk for ${chart.id}; skipping tiles`);
-        continue;
+      try {
+        if (await readManifest(chart)) continue;
+        if (!sourceFile(chart)) {
+          console.warn(`[historical] no scan on disk for ${chart.id}; skipping tiles`);
+          continue;
+        }
+        await ensurePyramid(chart);
+        // Breathe between charts so a request arriving mid-warmup is not queued behind
+        // the next one starting immediately.
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      } catch (err) {
+        console.warn(`[historical] warmup failed for ${chart.id}:`, err);
       }
-      await ensurePyramid(chart);
     }
-  }, 5_000).unref?.();
+  }, Number.isFinite(delayMs) ? delayMs : 45_000);
+  timer.unref?.();
 }

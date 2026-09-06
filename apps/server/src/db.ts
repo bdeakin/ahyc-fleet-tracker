@@ -17,6 +17,16 @@ export function getDb(): Db {
   return db;
 }
 
+/** Close SQLite on shutdown so WAL is checkpointed onto the volume rather than left mid-write. */
+export function closeDb(): void {
+  if (!db) return;
+  try {
+    db.close();
+  } finally {
+    db = null;
+  }
+}
+
 function migrate(database: Db) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS vessels (

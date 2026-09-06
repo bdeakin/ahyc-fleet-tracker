@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import type { FastifyInstance } from "fastify";
+import { getBootError } from "./bootState.js";
 import { buildAdventure } from "./narrative.js";
 import { listChartLayers, readMbtilesTile } from "./charts.js";
 import { getDb } from "./db.js";
@@ -35,19 +36,49 @@ import {
   verifyAdminAuth,
 } from "./supabase.js";
 
+/*
+ * The storage diagnostics on /api/health walk every track point, which is fine on a laptop
+ * and slow on a volume holding months of history. The platform's health check has a hard
+ * timeout and restarts the container when it is missed, so the span is computed off to the
+ * side and the endpoint answers from the last snapshot.
+ */
+const HEALTH_SPAN_TTL_MS = 60_000;
+let healthSpan: ReturnType<typeof trackHistorySpan> | null = null;
+let healthSpanAt = 0;
+let healthSpanRunning = false;
+
+function refreshHealthSpan(): void {
+  if (healthSpanRunning || Date.now() - healthSpanAt < HEALTH_SPAN_TTL_MS) return;
+  healthSpanRunning = true;
+  setImmediate(() => {
+    try {
+      healthSpan = trackHistorySpan(getDb());
+      healthSpanAt = Date.now();
+    } catch (err) {
+      console.warn("[health] track span failed", err);
+    } finally {
+      healthSpanRunning = false;
+    }
+  });
+}
+
 export async function registerRoutes(
   app: FastifyInstance,
   ais: AisIngestWorker,
   broadcast: (payload: unknown) => void,
   aishub: AishubWorker,
 ) {
-  app.get("/api/health", async () => {
-    const span = trackHistorySpan(getDb());
+  app.get("/api/health", async (_req, reply) => {
+    const bootError = getBootError();
+    if (!bootError) refreshHealthSpan();
+    const span = healthSpan;
     const mounted = isMountPoint(config.dataDir);
     const railwayMount = process.env.RAILWAY_VOLUME_MOUNT_PATH ?? null;
     const onRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_NAME);
+    if (bootError) reply.code(503);
     return {
-      ok: true,
+      ok: !bootError,
+      bootError,
       dataDir: config.dataDir,
       dbPath: paths.db,
       dbExists: fs.existsSync(paths.db),
@@ -55,9 +86,11 @@ export async function registerRoutes(
       railwayVolumeMountPath: railwayMount,
       /** False when SQLite is on the ephemeral container FS and will vanish on redeploy. */
       durableStorage: !onRailway || mounted || (railwayMount != null && config.dataDir === railwayMount),
-      trafficSpanMs: span.trafficSpanMs,
-      pointCount: span.pointCount,
-      trafficRetentionMs: span.trafficRetentionMs,
+      uptimeSec: Math.round(process.uptime()),
+      /** Null until the first background snapshot lands; never blocks the check. */
+      trafficSpanMs: span?.trafficSpanMs ?? null,
+      pointCount: span?.pointCount ?? null,
+      trafficRetentionMs: span?.trafficRetentionMs ?? null,
     };
   });
 
