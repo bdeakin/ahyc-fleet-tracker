@@ -19,6 +19,7 @@ COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
 COPY apps/web ./apps/web
 
+ARG CACHE_BUST=0.8.5-maxzoom
 RUN npm run build
 
 # Prune devDependencies after build (keep production deps + native modules)
