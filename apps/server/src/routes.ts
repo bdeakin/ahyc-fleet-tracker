@@ -183,6 +183,7 @@ export async function registerRoutes(
         ts: raw.ts != null && Number.isFinite(Number(raw.ts)) ? Number(raw.ts) : Date.now(),
         name: raw.name ?? null,
         shipType: raw.shipType != null && Number.isFinite(Number(raw.shipType)) ? Number(raw.shipType) : null,
+        source: "radio",
       });
       if (!result.accepted || !result.live) {
         rejected += 1;
@@ -201,7 +202,32 @@ export async function registerRoutes(
     return pruneTrafficHistory(getDb());
   });
 
-  app.get("/api/live", async () => listLiveStates(getDb()));
+  app.get<{
+    Querystring: {
+      minLat?: string;
+      minLon?: string;
+      maxLat?: string;
+      maxLon?: string;
+      includeRegistered?: string;
+    };
+  }>("/api/live", async (req) => {
+    const { minLat, minLon, maxLat, maxLon, includeRegistered } = req.query;
+    const nums = [minLat, minLon, maxLat, maxLon].map((v) => (v != null ? Number(v) : NaN));
+    const hasBbox = nums.every((n) => Number.isFinite(n));
+    if (hasBbox) {
+      const [south, west, north, east] = nums as [number, number, number, number];
+      return listLiveStates(getDb(), {
+        bbox: {
+          minLat: Math.min(south, north),
+          maxLat: Math.max(south, north),
+          minLon: Math.min(west, east),
+          maxLon: Math.max(west, east),
+        },
+        includeRegisteredOutside: includeRegistered !== "0",
+      });
+    }
+    return listLiveStates(getDb());
+  });
 
   app.get<{ Params: { mmsi: string } }>("/api/vessels/profile/:mmsi", async (req, reply) => {
     const mmsi = String(req.params.mmsi ?? "").trim();
@@ -222,11 +248,15 @@ export async function registerRoutes(
   });
 
   app.get<{
-    Querystring: { mmsi?: string; from?: string; to?: string };
+    Querystring: { mmsi?: string; mmsis?: string; from?: string; to?: string };
   }>("/api/tracks", async (req) => {
     const to = req.query.to ? Number(req.query.to) : Date.now();
     const from = req.query.from ? Number(req.query.from) : to - 24 * 3600_000;
-    return queryTracks(getDb(), { mmsi: req.query.mmsi, from, to });
+    const mmsis =
+      req.query.mmsis != null && req.query.mmsis.length > 0
+        ? req.query.mmsis.split(",").map((m) => m.trim()).filter(Boolean)
+        : undefined;
+    return queryTracks(getDb(), { mmsi: req.query.mmsi, mmsis, from, to });
   });
 
   app.get<{ Querystring: { at?: string } }>("/api/tracks/replay", async (req) => {

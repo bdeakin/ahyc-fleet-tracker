@@ -4,6 +4,7 @@ import {
   labelForShipType,
   shipTypeCodeFromLabel,
   TRAFFIC_BBOX,
+  type AisSource,
   type TrackPoint,
   type VesselLiveState,
 } from "@ahyc/shared";
@@ -20,6 +21,8 @@ export type IngestPositionInput = TrackPoint & {
   name?: string | null;
   /** ITU-R AIS ship and cargo type (0–99). */
   shipType?: number | null;
+  /** Where this fix came from (radio / aishub / aisstream / …). */
+  source?: AisSource | null;
 };
 
 type TrafficMeta = { name: string | null; shipType: number | null };
@@ -82,6 +85,7 @@ function toLive(
   point: TrackPoint,
   nameHint?: string | null,
   shipTypeHint?: number | null,
+  sourceHint?: AisSource | null,
 ): VesselLiveState {
   const vessel = getVesselByMmsi(db, point.mmsi);
   const registered = Boolean(vessel?.active);
@@ -112,6 +116,7 @@ function toLive(
     cog: point.cog,
     heading: point.heading,
     ts: point.ts,
+    source: sourceHint ?? point.source ?? null,
   };
 }
 
@@ -152,8 +157,8 @@ export function ingestPosition(
 
   if (stored) {
     db.prepare(
-      `INSERT INTO track_points (mmsi, lat, lon, sog, cog, heading, ts)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO track_points (mmsi, lat, lon, sog, cog, heading, ts, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       point.mmsi,
       point.lat,
@@ -162,19 +167,46 @@ export function ingestPosition(
       point.cog ?? null,
       point.heading ?? null,
       point.ts,
+      point.source ?? null,
     );
   }
 
+  // Prefer newer fixes; equal timestamps keep an existing radio fix over network sources.
+  const prev = db
+    .prepare("SELECT ts, source FROM vessel_state WHERE mmsi = ?")
+    .get(point.mmsi) as { ts: number; source: string | null } | undefined;
+  const incomingSource = point.source ?? "unknown";
+  if (prev && point.ts < prev.ts) {
+    return {
+      stored: false,
+      accepted: true,
+      live: toLive(db, { ...point, ts: prev.ts, source: (prev.source as AisSource) ?? null }, point.name, point.shipType, (prev.source as AisSource) ?? null),
+    };
+  }
+  if (
+    prev &&
+    point.ts === prev.ts &&
+    prev.source === "radio" &&
+    incomingSource !== "radio"
+  ) {
+    return {
+      stored: false,
+      accepted: true,
+      live: toLive(db, { ...point, source: "radio" }, point.name, point.shipType, "radio"),
+    };
+  }
+
   db.prepare(
-    `INSERT INTO vessel_state (mmsi, lat, lon, sog, cog, heading, ts)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO vessel_state (mmsi, lat, lon, sog, cog, heading, ts, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(mmsi) DO UPDATE SET
        lat = excluded.lat,
        lon = excluded.lon,
        sog = excluded.sog,
        cog = excluded.cog,
        heading = excluded.heading,
-       ts = excluded.ts`,
+       ts = excluded.ts,
+       source = excluded.source`,
   ).run(
     point.mmsi,
     point.lat,
@@ -183,6 +215,7 @@ export function ingestPosition(
     point.cog ?? null,
     point.heading ?? null,
     point.ts,
+    incomingSource,
   );
 
   if (!getVesselByMmsi(db, point.mmsi)) {
@@ -195,12 +228,27 @@ export function ingestPosition(
   return {
     stored,
     accepted: true,
-    live: toLive(db, point, point.name, point.shipType),
+    live: toLive(db, point, point.name, point.shipType, point.source ?? incomingSource),
   };
 }
 
-export function listLiveStates(db: Db): VesselLiveState[] {
-  const rows = db.prepare("SELECT * FROM vessel_state").all() as Array<{
+export type LiveBbox = {
+  minLat: number;
+  minLon: number;
+  maxLat: number;
+  maxLon: number;
+};
+
+export type ListLiveOptions = {
+  /** When set, only vessels inside this box (plus optional club boats) are returned. */
+  bbox?: LiveBbox;
+  /** Include active registry vessels even if outside the bbox (default true with bbox). */
+  includeRegisteredOutside?: boolean;
+};
+
+function rowToLive(
+  db: Db,
+  r: {
     mmsi: string;
     lat: number;
     lon: number;
@@ -208,9 +256,12 @@ export function listLiveStates(db: Db): VesselLiveState[] {
     cog: number | null;
     heading: number | null;
     ts: number;
-  }>;
-  const live = rows.map((r) =>
-    toLive(db, {
+    source: string | null;
+  },
+): VesselLiveState {
+  return toLive(
+    db,
+    {
       mmsi: r.mmsi,
       lat: r.lat,
       lon: r.lon,
@@ -218,8 +269,44 @@ export function listLiveStates(db: Db): VesselLiveState[] {
       cog: r.cog,
       heading: r.heading,
       ts: r.ts,
-    }),
+      source: (r.source as AisSource) ?? null,
+    },
+    null,
+    null,
+    (r.source as AisSource) ?? null,
   );
+}
+
+export function listLiveStates(db: Db, opts: ListLiveOptions = {}): VesselLiveState[] {
+  const bbox = opts.bbox;
+  type Row = {
+    mmsi: string;
+    lat: number;
+    lon: number;
+    sog: number | null;
+    cog: number | null;
+    heading: number | null;
+    ts: number;
+    source: string | null;
+  };
+
+  let rows: Row[];
+  if (bbox) {
+    const includeRegistered = opts.includeRegisteredOutside !== false;
+    rows = db
+      .prepare(
+        `SELECT vs.mmsi, vs.lat, vs.lon, vs.sog, vs.cog, vs.heading, vs.ts, vs.source
+         FROM vessel_state vs
+         LEFT JOIN vessels v ON v.mmsi = vs.mmsi AND v.active = 1
+         WHERE (vs.lat BETWEEN ? AND ? AND vs.lon BETWEEN ? AND ?)
+            OR (? = 1 AND v.mmsi IS NOT NULL)`,
+      )
+      .all(bbox.minLat, bbox.maxLat, bbox.minLon, bbox.maxLon, includeRegistered ? 1 : 0) as Row[];
+  } else {
+    rows = db.prepare("SELECT * FROM vessel_state").all() as Row[];
+  }
+
+  const live = rows.map((r) => rowToLive(db, r));
   // Backfill colors: queue public profile scrapes for traffic still missing a type.
   for (const v of live) {
     if (!v.registered && (v.shipType == null || v.shipType <= 0)) {
@@ -231,7 +318,7 @@ export function listLiveStates(db: Db): VesselLiveState[] {
 
 export function queryTracks(
   db: Db,
-  opts: { mmsi?: string; from: number; to: number },
+  opts: { mmsi?: string; mmsis?: string[]; from: number; to: number },
 ): TrackPoint[] {
   if (opts.mmsi) {
     return db
@@ -240,6 +327,17 @@ export function queryTracks(
          WHERE mmsi = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC`,
       )
       .all(opts.mmsi, opts.from, opts.to) as TrackPoint[];
+  }
+  if (opts.mmsis && opts.mmsis.length > 0) {
+    const unique = [...new Set(opts.mmsis.map((m) => m.trim()).filter(Boolean))].slice(0, 120);
+    if (unique.length === 0) return [];
+    const placeholders = unique.map(() => "?").join(",");
+    return db
+      .prepare(
+        `SELECT mmsi, lat, lon, sog, cog, heading, ts FROM track_points
+         WHERE mmsi IN (${placeholders}) AND ts >= ? AND ts <= ? ORDER BY ts ASC`,
+      )
+      .all(...unique, opts.from, opts.to) as TrackPoint[];
   }
   return db
     .prepare(

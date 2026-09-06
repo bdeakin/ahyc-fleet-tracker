@@ -9,6 +9,17 @@ export type Vessel = {
   updatedAt: string;
 };
 
+/** Where an AIS fix came from. `vesselfinder` is reserved for a future API fallback. */
+export type AisSource = "radio" | "aishub" | "aisstream" | "vesselfinder" | "unknown";
+
+export const AIS_SOURCE_LABELS: Record<AisSource, string> = {
+  radio: "Terrestrial radio",
+  aishub: "AISHub",
+  aisstream: "AISStream",
+  vesselfinder: "VesselFinder",
+  unknown: "Unknown",
+};
+
 export type TrackPoint = {
   mmsi: string;
   lat: number;
@@ -17,6 +28,8 @@ export type TrackPoint = {
   cog?: number | null;
   heading?: number | null;
   ts: number;
+  /** AIS data source for this fix. */
+  source?: AisSource | null;
 };
 
 export type VesselLiveState = {
@@ -35,9 +48,10 @@ export type VesselLiveState = {
   cog?: number | null;
   heading?: number | null;
   ts: number;
+  /** AIS data source for the latest fix. */
+  source?: AisSource | null;
 };
 
-/** Cached vessel particulars scraped once per MMSI (VesselFinder / similar). */
 export type VesselProfile = {
   mmsi: string;
   name: string | null;
@@ -147,14 +161,35 @@ export const DEFAULT_BBOX = {
 } as const satisfies BBox;
 
 /**
- * AISHub coverage: Chesapeake Bay through Downeast Maine, west through
- * the Great Lakes (Superior → Ontario) for club cruising / race tracking.
+ * AISHub coverage regions. One huge Chesapeake→Lakes rectangle often returns
+ * 0 records from AISHub with no error, so we poll these in rotation.
+ * `NORTHEAST_BBOX` is their union (perimeter / watchlist hysteresis).
  */
+export const AISHUB_REGIONS = [
+  {
+    id: "atlantic-ne",
+    label: "Atlantic Northeast (Chesapeake → Maine)",
+    minLat: 36.5,
+    minLon: -77.5,
+    maxLat: 45.0,
+    maxLon: -66.5,
+  },
+  {
+    id: "great-lakes",
+    label: "Great Lakes (Superior → Ontario)",
+    minLat: 41.0,
+    minLon: -92.5,
+    maxLat: 49.5,
+    maxLon: -76.0,
+  },
+] as const satisfies ReadonlyArray<BBox & { id: string; label: string }>;
+
+/** Union of AISHub regions — perimeter detection for club boats. */
 export const NORTHEAST_BBOX = {
-  minLat: 36.5,   // Cape Henry / southern Chesapeake
-  minLon: -92.5,  // western Lake Superior (Duluth)
-  maxLat: 49.5,   // northern Lake Superior
-  maxLon: -66.5,  // east of Maine / Gulf of Maine
+  minLat: Math.min(...AISHUB_REGIONS.map((r) => r.minLat)),
+  minLon: Math.min(...AISHUB_REGIONS.map((r) => r.minLon)),
+  maxLat: Math.max(...AISHUB_REGIONS.map((r) => r.maxLat)),
+  maxLon: Math.max(...AISHUB_REGIONS.map((r) => r.maxLon)),
 } as const satisfies BBox;
 
 /** Default perimeter band (degrees) inside NORTHEAST_BBOX that triggers MMSI watch. ~30 nm. */

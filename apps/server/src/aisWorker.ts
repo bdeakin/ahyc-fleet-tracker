@@ -200,6 +200,7 @@ export class AisIngestWorker {
       cog: Number.isFinite(cog as number) ? cog : null,
       heading: heading != null && heading !== 511 && Number.isFinite(heading) ? heading : null,
       ts: Number.isFinite(ts) ? ts : Date.now(),
+      source: "aisstream",
     });
     if (!accepted || !live) return;
     this.ingestCount += 1;

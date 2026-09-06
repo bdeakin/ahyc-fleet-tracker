@@ -32,7 +32,16 @@ export type PublicConfig = {
 export const api = {
   config: () => json<PublicConfig>("/api/config"),
   vessels: () => json<Vessel[]>("/api/vessels"),
-  live: () => json<VesselLiveState[]>("/api/live"),
+  live: (bbox?: { minLat: number; minLon: number; maxLat: number; maxLon: number }) => {
+    if (!bbox) return json<VesselLiveState[]>("/api/live");
+    const q = new URLSearchParams({
+      minLat: String(bbox.minLat),
+      minLon: String(bbox.minLon),
+      maxLat: String(bbox.maxLat),
+      maxLon: String(bbox.maxLon),
+    });
+    return json<VesselLiveState[]>(`/api/live?${q}`);
+  },
   vesselProfile: (mmsi: string) => json<VesselProfile>(`/api/vessels/profile/${mmsi}`),
   charts: () => json<ChartLayer[]>("/api/charts"),
   syncVessels: () =>
@@ -40,9 +49,10 @@ export const api = {
       method: "POST",
       headers: { Authorization: authHeader() },
     }),
-  tracks: (from: number, to: number, mmsi?: string) => {
+  tracks: (from: number, to: number, mmsi?: string, mmsis?: string[]) => {
     const q = new URLSearchParams({ from: String(from), to: String(to) });
     if (mmsi) q.set("mmsi", mmsi);
+    else if (mmsis && mmsis.length > 0) q.set("mmsis", mmsis.join(","));
     return json<TrackPoint[]>(`/api/tracks?${q}`);
   },
   replay: (at: number) => json<VesselLiveState[]>(`/api/tracks/replay?at=${at}`),

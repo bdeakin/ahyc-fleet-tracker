@@ -1,5 +1,12 @@
 # Version history
 
+## 0.8.3 — AIS source tags, region split, viewport + clustering
+
+- Live / track rows carry `source` (`radio`, `aishub`, `aisstream`, …); kiosk can filter by Radio / AISHub / AISStream.
+- AISHub polls rotating `atlantic-ne` and `great-lakes` regions instead of one huge empty bbox.
+- Kiosk loads `/api/live` for the visible map area, clusters traffic when zoomed out, and limits short trails to nearby vessels when zoomed in.
+
+
 ## 0.8.2 — AISHub coverage includes the Great Lakes
 
 - Expanded `NORTHEAST_BBOX` west/north to cover Lakes Superior through Ontario (with the existing Chesapeake→Maine seaboard).

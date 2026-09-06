@@ -38,7 +38,8 @@ function migrate(database: Db) {
       sog REAL,
       cog REAL,
       heading REAL,
-      ts INTEGER NOT NULL
+      ts INTEGER NOT NULL,
+      source TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_track_mmsi_ts ON track_points(mmsi, ts);
@@ -51,7 +52,8 @@ function migrate(database: Db) {
       sog REAL,
       cog REAL,
       heading REAL,
-      ts INTEGER NOT NULL
+      ts INTEGER NOT NULL,
+      source TEXT
     );
 
     CREATE TABLE IF NOT EXISTS trips (
@@ -121,5 +123,12 @@ function migrate(database: Db) {
   const cols = database.prepare("PRAGMA table_info(traffic_names)").all() as Array<{ name: string }>;
   if (cols.length && !cols.some((c) => c.name === "ship_type")) {
     database.exec("ALTER TABLE traffic_names ADD COLUMN ship_type INTEGER");
+  }
+
+  for (const table of ["track_points", "vessel_state"] as const) {
+    const tcols = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (tcols.length && !tcols.some((c) => c.name === "source")) {
+      database.exec(`ALTER TABLE ${table} ADD COLUMN source TEXT`);
+    }
   }
 }

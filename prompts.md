@@ -21,14 +21,16 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Dispatcher output: UDP `127.0.0.1:10110`
 - Forwarder: `deploy/ais-forwarder` with `AHYC_INGEST_URL` + `AIS_INGEST_TOKEN`
 - Railway: set matching `AIS_INGEST_TOKEN`; optional `TRAFFIC_RETENTION_HOURS`, `TRACK_MIN_INTERVAL_SEC`
-- Product rules: traffic 24h; registered MMSIs indefinite; live 10m trails; click/search vessel → 24h track + detail pane
+- Product rules: traffic 24h; registered MMSIs indefinite; live 10m trails when zoomed in; click/search vessel → 24h track + detail pane
 - Markers color-coded by AIS ship type (sailing white, pleasure pink); club vessels keep registry color + star
-- Kiosk search: type vessel name or MMSI to zoom and inspect
+- Kiosk search: type vessel name or MMSI to zoom and inspect (scoped to vessels loaded for the current view)
 - New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known
 - Default basemap: Esri Ocean (depth + labels); switcher keeps full NOAA Chart Display WMS
+- Live AIS is viewport-scoped; traffic clusters when zoomed out; filter markers by source (Radio / AISHub / AISStream)
 
 ## AISHub (Northeast + offshore)
 
 - Set `AISHUB_USERNAME` on Railway
-- Northeast + Great Lakes bbox for club boats; MMSI watchlist when they approach/leave the perimeter
-- Poll AISHub every 5 minutes by default (never more than every 5 minutes)
+- Rotating regions: Atlantic NE + Great Lakes (union used for perimeter watch)
+- Poll AISHub every 5 minutes by default (never more than once per minute)
+- Tag ingest `source=aishub`; status at `/api/aishub/status`

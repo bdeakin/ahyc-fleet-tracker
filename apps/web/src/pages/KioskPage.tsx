@@ -2,11 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import {
   AHYC_CENTER,
+  AIS_SOURCE_LABELS,
   NOAA_CHART_WMS,
   colorForShipType,
   markerNeedsDarkOutline,
+  type AisSource,
   type ChartLayer,
   type VesselLiveState,
   type VesselProfile,
@@ -16,6 +21,13 @@ import { api, liveSocket } from "../api";
 const HOURS = 48;
 const TRACK_HOURS = 24;
 const DEFAULT_TRAIL_MINUTES = 10;
+/** Individual markers below this zoom; clusters above. */
+const CLUSTER_DISABLE_ZOOM = 13;
+/** Short trails only when zoomed in enough (and for selected / club). */
+const TRAIL_MIN_ZOOM = 11;
+const MAX_SHORT_TRAILS = 50;
+const VIEWPORT_PAD = 0.2;
+const VIEWPORT_DEBOUNCE_MS = 220;
 
 const TYPE_LEGEND: Array<{ color: string; label: string }> = [
   { color: "#1f6f8b", label: "AHYC club ★" },
@@ -31,19 +43,59 @@ const TYPE_LEGEND: Array<{ color: string; label: string }> = [
   { color: "#6b7280", label: "Other" },
 ];
 
+const SOURCE_FILTERS: Array<{ id: AisSource; label: string }> = [
+  { id: "radio", label: "Radio" },
+  { id: "aishub", label: "AISHub" },
+  { id: "aisstream", label: "AISStream" },
+];
+
 function markerColor(v: VesselLiveState): string {
   if (v.registered) return v.color ?? "#1f6f8b";
   if (v.color) return v.color;
   return colorForShipType(v.shipType);
 }
 
+function sourceAllowed(
+  v: VesselLiveState,
+  filter: Record<AisSource, boolean>,
+): boolean {
+  const src = (v.source ?? "unknown") as AisSource;
+  return filter[src] !== false;
+}
+
+function mapBbox(map: L.Map): { minLat: number; minLon: number; maxLat: number; maxLon: number } {
+  const b = map.getBounds().pad(VIEWPORT_PAD);
+  return {
+    minLat: b.getSouth(),
+    minLon: b.getWest(),
+    maxLat: b.getNorth(),
+    maxLon: b.getEast(),
+  };
+}
+
+function inMapBounds(v: VesselLiveState, map: L.Map | null): boolean {
+  if (!map) return true;
+  return map.getBounds().pad(VIEWPORT_PAD).contains([v.lat, v.lon]);
+}
+
 export function KioskPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObj = useRef<L.Map | null>(null);
   const layerRef = useRef<L.Layer | null>(null);
-  const markersRef = useRef<L.LayerGroup | null>(null);
+  const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
+  const clubLayerRef = useRef<L.LayerGroup | null>(null);
   const tracksRef = useRef<L.LayerGroup | null>(null);
   const liveVesselsRef = useRef<VesselLiveState[]>([]);
+  const liveModeRef = useRef(true);
+  const sourceFilterRef = useRef<Record<AisSource, boolean>>({
+    radio: true,
+    aishub: true,
+    aisstream: true,
+    vesselfinder: true,
+    unknown: true,
+  });
+  const viewportTimerRef = useRef<number | null>(null);
+  const viewportReqRef = useRef(0);
 
   const [charts, setCharts] = useState<ChartLayer[]>([]);
   const [chartId, setChartId] = useState("ocean-simple");
@@ -57,8 +109,19 @@ export function KioskPage() {
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [vesselProfile, setVesselProfile] = useState<VesselProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [mapZoom, setMapZoom] = useState(12);
+  const [sourceFilter, setSourceFilter] = useState<Record<AisSource, boolean>>({
+    radio: true,
+    aishub: true,
+    aisstream: true,
+    vesselfinder: true,
+    unknown: true,
+  });
   const windowStart = useMemo(() => rangeEnd - HOURS * 3600_000, [rangeEnd]);
   const scrubTs = windowStart + slider * 60_000;
+
+  sourceFilterRef.current = sourceFilter;
+  liveModeRef.current = live;
 
   const selectedVessel = useMemo(
     () => liveVessels.find((v) => v.mmsi === selectedMmsi) ?? null,
@@ -75,6 +138,78 @@ export function KioskPage() {
       })
       .slice(0, 8);
   }, [liveVessels, searchQuery]);
+
+  function makeVesselMarker(v: VesselLiveState): L.Marker {
+    const registered = Boolean(v.registered);
+    const color = markerColor(v);
+    const size = registered ? 22 : 12;
+    const outlineClass = markerNeedsDarkOutline(color) ? " vessel-marker-dot--light" : "";
+    const icon = L.divIcon({
+      className: registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic",
+      html: registered
+        ? `<span class="vessel-marker-star" aria-hidden="true">★</span><span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`
+        : `<span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+    const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: registered ? 500 : 0 });
+    const label = v.name ?? v.mmsi;
+    const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
+    const sourceBit = AIS_SOURCE_LABELS[(v.source ?? "unknown") as AisSource];
+    marker.bindTooltip(
+      `${label} (${typeBit} · ${sourceBit})${v.sog != null ? ` · ${v.sog.toFixed(1)} kn` : ""}`,
+      { direction: "top", offset: [0, -10] },
+    );
+    marker.on("click", () => focusVessel(v));
+    return marker;
+  }
+
+  function drawMarkers(vessels: VesselLiveState[]) {
+    setVesselCount(vessels.length);
+    setLiveVessels(vessels);
+    liveVesselsRef.current = vessels;
+    const cluster = clusterRef.current;
+    const clubLayer = clubLayerRef.current;
+    const map = mapObj.current;
+    if (!cluster || !clubLayer) return;
+
+    cluster.clearLayers();
+    clubLayer.clearLayers();
+
+    const filter = sourceFilterRef.current;
+    const traffic: L.Layer[] = [];
+    for (const v of vessels) {
+      if (!sourceAllowed(v, filter)) continue;
+      // Club boats outside the padded view still come from the API; skip drawing them until visible.
+      if (v.registered && map && !inMapBounds(v, map) && v.mmsi !== selectedMmsi) continue;
+      const marker = makeVesselMarker(v);
+      if (v.registered) clubLayer.addLayer(marker);
+      else traffic.push(marker);
+    }
+    if (traffic.length) cluster.addLayers(traffic);
+  }
+
+  function fetchViewportLive() {
+    const map = mapObj.current;
+    if (!map || !liveModeRef.current) return;
+    const reqId = ++viewportReqRef.current;
+    const bbox = mapBbox(map);
+    api
+      .live(bbox)
+      .then((vessels) => {
+        if (reqId !== viewportReqRef.current) return;
+        drawMarkers(vessels);
+      })
+      .catch(() => undefined);
+  }
+
+  function scheduleViewportLive() {
+    if (viewportTimerRef.current != null) window.clearTimeout(viewportTimerRef.current);
+    viewportTimerRef.current = window.setTimeout(() => {
+      viewportTimerRef.current = null;
+      fetchViewportLive();
+    }, VIEWPORT_DEBOUNCE_MS);
+  }
 
   useEffect(() => {
     api.charts().then((c) => {
@@ -118,13 +253,42 @@ export function KioskPage() {
       zoomControl: true,
       attributionControl: true,
     });
-    markersRef.current = L.layerGroup().addTo(map);
+    const cluster = L.markerClusterGroup({
+      showCoverageOnHover: false,
+      maxClusterRadius: (zoom: number) => (zoom < 8 ? 90 : zoom < 11 ? 60 : 45),
+      disableClusteringAtZoom: CLUSTER_DISABLE_ZOOM,
+      spiderfyOnMaxZoom: true,
+      chunkedLoading: true,
+      removeOutsideVisibleBounds: true,
+    });
+    const clubLayer = L.layerGroup();
+    cluster.addTo(map);
+    clubLayer.addTo(map);
     tracksRef.current = L.layerGroup().addTo(map);
+    clusterRef.current = cluster;
+    clubLayerRef.current = clubLayer;
     mapObj.current = map;
+    setMapZoom(map.getZoom());
+
+    const onViewChange = () => {
+      setMapZoom(map.getZoom());
+      scheduleViewportLive();
+    };
+    map.on("moveend", onViewChange);
+    map.on("zoomend", onViewChange);
+
     return () => {
+      map.off("moveend", onViewChange);
+      map.off("zoomend", onViewChange);
+      if (viewportTimerRef.current != null) window.clearTimeout(viewportTimerRef.current);
       map.remove();
       mapObj.current = null;
+      clusterRef.current = null;
+      clubLayerRef.current = null;
+      tracksRef.current = null;
     };
+    // scheduleViewportLive closes over live; map init runs once — live subscription handles fetches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -164,23 +328,28 @@ export function KioskPage() {
     if (!live) return;
     const ws = liveSocket((msg) => {
       const data = msg as { type: string; vessels?: VesselLiveState[]; vessel?: VesselLiveState };
-      if (data.type === "snapshot" && data.vessels) {
-        drawMarkers(data.vessels);
-      }
-      if (data.type === "vessel" && data.vessel) {
-        setRangeEnd(Date.now());
-        api.live().then(drawMarkers).catch(() => undefined);
+      if (data.type === "snapshot" || data.type === "vessel") {
+        scheduleViewportLive();
       }
     });
-    api.live().then(drawMarkers).catch(() => undefined);
+    fetchViewportLive();
     const tick = window.setInterval(() => {
       if (live) setRangeEnd(Date.now());
     }, 60_000);
+    const refresh = window.setInterval(fetchViewportLive, 30_000);
     return () => {
       ws.close();
       window.clearInterval(tick);
+      window.clearInterval(refresh);
+      if (viewportTimerRef.current != null) window.clearTimeout(viewportTimerRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live]);
+
+  useEffect(() => {
+    drawMarkers(liveVesselsRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceFilter]);
 
   useEffect(() => {
     if (live) return;
@@ -189,10 +358,13 @@ export function KioskPage() {
       .tracks(windowStart, scrubTs)
       .then((points) => {
         const group = tracksRef.current;
+        const map = mapObj.current;
         if (!group) return;
         group.clearLayers();
+        const bounds = map?.getBounds().pad(VIEWPORT_PAD);
         const byMmsi = new Map<string, L.LatLngExpression[]>();
         for (const p of points) {
+          if (bounds && !bounds.contains([p.lat, p.lon])) continue;
           const arr = byMmsi.get(p.mmsi) ?? [];
           arr.push([p.lat, p.lon]);
           byMmsi.set(p.mmsi, arr);
@@ -202,50 +374,28 @@ export function KioskPage() {
         }
       })
       .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, scrubTs, windowStart]);
 
-  // Live mode: 10-minute trails for every vessel; selected vessel gets 24h.
+  // Live mode: short trails for nearby vessels when zoomed in; selected vessel gets 24h.
   useEffect(() => {
     if (!live) return;
     let cancelled = false;
 
     async function refreshTrails() {
       const group = tracksRef.current;
+      const map = mapObj.current;
       if (!group) return;
-      const vessels = liveVesselsRef.current;
+      const vessels = liveVesselsRef.current.filter((v) => sourceAllowed(v, sourceFilterRef.current));
       const to = Date.now();
       const shortFrom = to - DEFAULT_TRAIL_MINUTES * 60_000;
       const longFrom = to - TRACK_HOURS * 3600_000;
+      const zoom = map?.getZoom() ?? 0;
 
       const colorByMmsi = new Map(vessels.map((v) => [v.mmsi, markerColor(v)]));
-      const mmsis = vessels.map((v) => v.mmsi);
-      if (mmsis.length === 0) {
-        group.clearLayers();
-        return;
-      }
 
       try {
-        const points = await api.tracks(shortFrom, to);
-        if (cancelled) return;
         group.clearLayers();
-
-        const byMmsi = new Map<string, L.LatLngExpression[]>();
-        for (const p of points) {
-          if (!colorByMmsi.has(p.mmsi)) continue;
-          const arr = byMmsi.get(p.mmsi) ?? [];
-          arr.push([p.lat, p.lon]);
-          byMmsi.set(p.mmsi, arr);
-        }
-
-        for (const [mmsi, coords] of byMmsi) {
-          if (coords.length < 2) continue;
-          if (selectedMmsi && mmsi === selectedMmsi) continue;
-          L.polyline(coords, {
-            color: colorByMmsi.get(mmsi) ?? "#6b7280",
-            weight: 2,
-            opacity: 0.55,
-          }).addTo(group);
-        }
 
         if (selectedMmsi) {
           const longPoints = await api.tracks(longFrom, to, selectedMmsi);
@@ -259,6 +409,40 @@ export function KioskPage() {
             }).addTo(group);
           }
         }
+
+        const wantShort = zoom >= TRAIL_MIN_ZOOM;
+        if (!wantShort) return;
+
+        const trailCandidates = vessels
+          .filter((v) => v.mmsi !== selectedMmsi)
+          .filter((v) => v.registered || inMapBounds(v, map))
+          .slice(0, MAX_SHORT_TRAILS);
+        if (trailCandidates.length === 0) return;
+
+        const points = await api.tracks(
+          shortFrom,
+          to,
+          undefined,
+          trailCandidates.map((v) => v.mmsi),
+        );
+        if (cancelled) return;
+
+        const byMmsi = new Map<string, L.LatLngExpression[]>();
+        for (const p of points) {
+          if (!colorByMmsi.has(p.mmsi)) continue;
+          const arr = byMmsi.get(p.mmsi) ?? [];
+          arr.push([p.lat, p.lon]);
+          byMmsi.set(p.mmsi, arr);
+        }
+
+        for (const [mmsi, coords] of byMmsi) {
+          if (coords.length < 2) continue;
+          L.polyline(coords, {
+            color: colorByMmsi.get(mmsi) ?? "#6b7280",
+            weight: 2,
+            opacity: 0.55,
+          }).addTo(group);
+        }
       } catch {
         /* ignore trail errors */
       }
@@ -270,8 +454,7 @@ export function KioskPage() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [live, selectedMmsi, rangeEnd, vesselCount]);
-
+  }, [live, selectedMmsi, rangeEnd, vesselCount, mapZoom]);
 
   useEffect(() => {
     if (!selectedMmsi) {
@@ -291,7 +474,6 @@ export function KioskPage() {
         });
     };
     load();
-    // Poll while pending so scrape results appear without reselecting.
     const id = window.setInterval(() => {
       if (cancelled) return;
       api
@@ -334,37 +516,10 @@ export function KioskPage() {
     }
   }
 
-  function drawMarkers(vessels: VesselLiveState[]) {
-    setVesselCount(vessels.length);
-    setLiveVessels(vessels);
-    liveVesselsRef.current = vessels;
-    const group = markersRef.current;
-    if (!group) return;
-    group.clearLayers();
-    for (const v of vessels) {
-      const registered = Boolean(v.registered);
-      const color = markerColor(v);
-      const size = registered ? 22 : 12;
-      const outlineClass = markerNeedsDarkOutline(color) ? " vessel-marker-dot--light" : "";
-      const icon = L.divIcon({
-        className: registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic",
-        html: registered
-          ? `<span class="vessel-marker-star" aria-hidden="true">★</span><span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`
-          : `<span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-      });
-      const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: registered ? 500 : 0 });
-      const label = v.name ?? v.mmsi;
-      const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
-      marker.bindTooltip(
-        `${label} (${typeBit})${v.sog != null ? ` · ${v.sog.toFixed(1)} kn` : ""}`,
-        { direction: "top", offset: [0, -10] },
-      );
-      marker.on("click", () => focusVessel(v));
-      marker.addTo(group);
-    }
-  }
+  const trailsNote =
+    mapZoom >= TRAIL_MIN_ZOOM
+      ? ` · trails ${DEFAULT_TRAIL_MINUTES}m`
+      : " · trails when zoomed in";
 
   return (
     <div className="kiosk">
@@ -424,6 +579,21 @@ export function KioskPage() {
           </div>
         ))}
       </aside>
+      <aside className="source-filter" aria-label="AIS source filters">
+        <div className="source-filter-title">AIS source</div>
+        {SOURCE_FILTERS.map((item) => (
+          <label key={item.id} className="source-filter-row">
+            <input
+              type="checkbox"
+              checked={sourceFilter[item.id]}
+              onChange={() =>
+                setSourceFilter((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
+              }
+            />
+            <span>{item.label}</span>
+          </label>
+        ))}
+      </aside>
       <div className="vessel-search">
         <label className="vessel-search-label" htmlFor="vessel-search-input">
           Find vessel
@@ -455,7 +625,7 @@ export function KioskPage() {
           </ul>
         )}
         {searchQuery.trim().length >= 2 && searchMatches.length === 0 && (
-          <p className="vessel-search-empty">No vessels match.</p>
+          <p className="vessel-search-empty">No vessels match in this view.</p>
         )}
       </div>
       {selectedVessel && (
@@ -474,6 +644,10 @@ export function KioskPage() {
             <div>
               <dt>Type</dt>
               <dd>{selectedVessel.registered ? "AHYC fleet" : selectedVessel.shipTypeLabel || "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd>{AIS_SOURCE_LABELS[(selectedVessel.source ?? "unknown") as AisSource]}</dd>
             </div>
             <div>
               <dt>SOG</dt>
@@ -567,15 +741,15 @@ export function KioskPage() {
         <label>
           <span>
             {live ? "Live" : "Replay"}
-            {vesselCount ? ` · ${vesselCount} vessel${vesselCount === 1 ? "" : "s"}` : ""}
-            {selectedMmsi ? ` · track ${TRACK_HOURS}h` : ` · trails ${DEFAULT_TRAIL_MINUTES}m`}
+            {vesselCount ? ` · ${vesselCount} in view` : ""}
+            {selectedMmsi ? ` · track ${TRACK_HOURS}h` : trailsNote}
           </span>
           <span>{new Date(scrubTs).toLocaleString()}</span>
         </label>
         {aisHint && <p className="ais-hint">{aisHint}</p>}
         <p className="ais-hint">
-          Markers are colored by AIS ship type. Live view shows the last {DEFAULT_TRAIL_MINUTES} minutes of
-          track for each vessel; click or search one for a {TRACK_HOURS}-hour track and details.
+          AIS loads for the visible map area. Zoomed out, traffic clusters; club boats stay individual.
+          Short trails appear when zoomed in; click or search for a {TRACK_HOURS}-hour track and details.
         </p>
         <input
           type="range"

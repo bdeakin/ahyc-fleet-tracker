@@ -1,4 +1,5 @@
 import {
+  AISHUB_REGIONS,
   NORTHEAST_BBOX,
   deepInsideBbox,
   nearOrOutsideBbox,
@@ -18,6 +19,12 @@ export type AishubStatus = {
   lastError: string | null;
   callCount: number;
   ingestCount: number;
+  /** Vessels returned by the last AISHub response. */
+  lastFetched: number;
+  /** Vessels accepted into live state from the last response. */
+  lastIngested: number;
+  /** Region id of the last bbox pull (atlantic-ne / great-lakes). */
+  lastRegion: string | null;
   watchlist: string[];
   nextAllowedCallAt: number | null;
 };
@@ -186,6 +193,10 @@ export class AishubWorker {
   private lastError: string | null = null;
   private callCount = 0;
   private ingestCount = 0;
+  private lastFetched = 0;
+  private lastIngested = 0;
+  private lastRegion: string | null = null;
+  private regionIndex = 0;
   /** When a watchlist is active, alternate bbox ↔ MMSI on each allowed slot. */
   private preferMmsiNext = false;
 
@@ -201,6 +212,9 @@ export class AishubWorker {
       lastError: this.lastError,
       callCount: this.callCount,
       ingestCount: this.ingestCount,
+      lastFetched: this.lastFetched,
+      lastIngested: this.lastIngested,
+      lastRegion: this.lastRegion,
       watchlist: listWatch(getDb()),
       nextAllowedCallAt: this.lastCallAt == null ? Date.now() : this.lastCallAt + minInterval,
     };
@@ -314,21 +328,26 @@ export class AishubWorker {
   }
 
   private async runBboxPull(db: Db) {
+    const region = AISHUB_REGIONS[this.regionIndex % AISHUB_REGIONS.length]!;
+    this.regionIndex = (this.regionIndex + 1) % AISHUB_REGIONS.length;
+    this.lastRegion = region.id;
+
     const vessels = await this.fetchAishub({
-      latmin: NORTHEAST_BBOX.minLat,
-      latmax: NORTHEAST_BBOX.maxLat,
-      lonmin: NORTHEAST_BBOX.minLon,
-      lonmax: NORTHEAST_BBOX.maxLon,
+      latmin: region.minLat,
+      latmax: region.maxLat,
+      lonmin: region.minLon,
+      lonmax: region.maxLon,
     });
     this.lastBboxAt = Date.now();
     setSetting(db, LAST_BBOX_KEY, String(this.lastBboxAt));
+    this.lastFetched = vessels.length;
 
     const club = new Set(activeMmsis(db));
     const seenClub = new Set<string>();
     let ingested = 0;
     let clubIngested = 0;
 
-    // Ingest every AISHub fix in the Northeast box (not just club MMSIs).
+    // Ingest every AISHub fix in this region (not just club MMSIs).
     for (const v of vessels) {
       if (!this.ingestVessel(db, v)) continue;
       ingested += 1;
@@ -337,8 +356,9 @@ export class AishubWorker {
       seenClub.add(club.has(v.mmsi) ? v.mmsi : v.mmsi.padStart(9, "0"));
       this.applyWatchRules(db, v, club);
     }
+    this.lastIngested = ingested;
 
-    // Club boat last seen near the perimeter but absent from today's bbox → keep MMSI-watching.
+    // Club boat last seen near the perimeter but absent from this pull → keep MMSI-watching.
     for (const mmsi of club) {
       if (seenClub.has(mmsi) || seenClub.has(mmsi.padStart(9, "0"))) continue;
       const live = db.prepare("SELECT lat, lon, ts FROM vessel_state WHERE mmsi = ?").get(mmsi) as
@@ -351,7 +371,7 @@ export class AishubWorker {
     }
 
     console.log(
-      `[aishub] bbox vessels=${vessels.length} ingested=${ingested} club=${clubIngested} watch=${listWatch(db).length}`,
+      `[aishub] bbox region=${region.id} vessels=${vessels.length} ingested=${ingested} club=${clubIngested} watch=${listWatch(db).length}`,
     );
   }
 
@@ -359,6 +379,7 @@ export class AishubWorker {
     // Multiple MMSIs in one request — still a single call against the 1/min budget.
     const vessels = await this.fetchAishub({ mmsi: mmsis.join(",") });
     this.lastMmsiAt = Date.now();
+    this.lastFetched = vessels.length;
     const club = new Set(activeMmsis(db));
     let ingested = 0;
 
@@ -366,6 +387,7 @@ export class AishubWorker {
       if (this.ingestVessel(db, v)) ingested += 1;
       this.applyWatchRules(db, v, club);
     }
+    this.lastIngested = ingested;
 
     console.log(
       `[aishub] mmsi asked=${mmsis.length} returned=${vessels.length} ingested=${ingested} watch=${listWatch(db).length}`,
@@ -397,7 +419,8 @@ export class AishubWorker {
       ts: v.ts,
       name: v.name,
       shipType: v.shipType,
-      // Northeast box is larger than the harbor TRAFFIC_BBOX.
+      source: "aishub",
+      // Coverage regions are larger than the harbor TRAFFIC_BBOX.
       allowOutsideTrafficBbox: true,
     });
     if (!accepted || !live) return false;

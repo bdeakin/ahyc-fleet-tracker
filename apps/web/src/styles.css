@@ -623,3 +623,62 @@ select {
     overflow: auto;
   }
 }
+
+
+.source-filter {
+  position: absolute;
+  z-index: 1000;
+  left: 1rem;
+  bottom: 5.5rem;
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--panel);
+  border: 1px solid rgba(176, 141, 87, 0.35);
+  border-radius: 0.4rem;
+  backdrop-filter: blur(8px);
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.source-filter-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+  margin-bottom: 0.1rem;
+}
+
+.source-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.source-filter-row input {
+  accent-color: #b08d57;
+}
+
+.marker-cluster-small,
+.marker-cluster-medium,
+.marker-cluster-large {
+  background-color: rgba(31, 111, 139, 0.22);
+}
+
+.marker-cluster-small div,
+.marker-cluster-medium div,
+.marker-cluster-large div {
+  background-color: rgba(31, 111, 139, 0.78);
+  color: #f7f4ef;
+  font-weight: 600;
+}
+
+.marker-cluster-small div {
+  font-size: 0.75rem;
+}
+
+.marker-cluster-medium div,
+.marker-cluster-large div {
+  font-size: 0.8rem;
+}

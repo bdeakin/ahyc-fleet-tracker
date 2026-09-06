@@ -1,5 +1,10 @@
 # Development narrative
 
+## 2026-09-06 — Viewport AIS + clustering (and source tags)
+
+AISHub’s wider coverage made the kiosk sluggish: every vessel on the Northeast seaboard and Great Lakes was drawn at once, and short trails fetched the entire track table. Live AIS now loads for the padded map viewport (`/api/live?minLat…`), traffic markers cluster until zoom 13 (club boats stay individual), and 10-minute trails only request nearby MMSIs when zoomed in. The same release tags each fix with its feed (radio / AISHub / AISStream), splits AISHub into rotating Atlantic + Great Lakes regions so the API returns data again, and adds source checkboxes on the kiosk.
+
+
 ## 2026-09-05 — AISHub for Northeast coverage and offshore club boats
 
 AISStream and the Pi Dispatcher cover the harbor well, but club boats leaving for races (Bermuda, etc.) fall off those feeds. AISHub gives a Northeast bbox (default every 5 minutes) (Chesapeake through Maine and the Great Lakes) plus an MMSI endpoint. When a registered boat approaches the perimeter of that box it joins a watchlist; we poll those MMSIs on the remaining once-per-minute AISHub budget until the boat is safely back inside. Empty AISHub responses are treated as rate-limit/no-data so we never hammer the API.
