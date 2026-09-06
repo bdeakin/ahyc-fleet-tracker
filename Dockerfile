@@ -25,6 +25,7 @@ RUN npm run build
 # Cut the historical chart pyramids here, where there is memory and CPU to spare. The
 # runtime container then only ever reads tiles off disk.
 RUN DATA_DIR=/app/tile-build node apps/server/dist/tools/cutTiles.js \
+    && mkdir -p /app/tile-build/historical-tiles \
     && mv /app/tile-build/historical-tiles /app/tile-seed \
     && rm -rf /app/tile-build
 
