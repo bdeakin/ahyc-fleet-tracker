@@ -367,67 +367,92 @@ select {
   margin: 0;
 }
 
-.chart-select {
+/* Chart, historical overlay and noteworthy-event pickers, always on screen together. */
+.map-layers {
   position: absolute;
   z-index: 1000;
   left: 1rem;
   bottom: 5.5rem;
+  max-width: calc(100vw - 7rem);
+  max-height: calc(100vh - 16rem);
+  overflow: auto;
+  display: grid;
+  gap: 0.4rem;
   background: var(--panel);
   border: 1px solid rgba(176, 141, 87, 0.35);
   border-radius: 0.4rem;
-  padding: 0.35rem 0.55rem;
+  padding: 0.45rem 0.6rem 0.5rem;
   backdrop-filter: blur(8px);
 }
 
-.chart-select select {
-  background: transparent;
-  color: var(--foam);
-  border: none;
-  outline: none;
-  min-width: 14rem;
-}
-
-.historical-chart-select {
-  position: absolute;
-  z-index: 1000;
-  left: 1rem;
-  bottom: 8.35rem;
+.map-layers-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  background: var(--panel);
-  border: 1px solid rgba(176, 141, 87, 0.45);
-  border-radius: 0.4rem;
-  padding: 0.4rem 0.55rem 0.45rem;
-  backdrop-filter: blur(8px);
-  animation: historical-chart-in 220ms ease-out;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  align-items: flex-end;
 }
 
-.historical-chart-select label {
-  font-size: 0.68rem;
-  letter-spacing: 0.04em;
+.map-layers-field {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.map-layers-field > span {
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.map-layers-field select {
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--foam);
+  border: 1px solid rgba(176, 141, 87, 0.28);
+  border-radius: 0.3rem;
+  padding: 0.2rem 0.3rem;
+  outline: none;
+  max-width: 15rem;
+  font-size: 0.78rem;
+}
+
+.noteworthy-detail {
+  border-top: 1px solid rgba(176, 141, 87, 0.28);
+  padding-top: 0.35rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  max-width: 22rem;
+}
+
+.noteworthy-detail-title {
+  font-weight: 700;
+  color: #d8ecff;
+  margin-bottom: 0.15rem;
+}
+
+.noteworthy-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.noteworthy-detail-row span {
   opacity: 0.75;
 }
 
-.historical-chart-select select {
-  background: transparent;
-  color: var(--foam);
-  border: none;
-  outline: none;
-  min-width: 15rem;
+.noteworthy-detail-row strong {
+  text-align: right;
   font-weight: 600;
 }
 
-@keyframes historical-chart-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.35rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.noteworthy-clear {
+  margin-top: 0.35rem;
+  border: 1px solid rgba(176, 141, 87, 0.45);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  border-radius: 0.3rem;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+  font-size: 0.68rem;
 }
 
 .vessel-marker {
@@ -672,13 +697,10 @@ select {
     flex-direction: column;
   }
 
-  .chart-select {
+  .map-layers {
     bottom: 10.5rem;
-  }
-
-  .historical-chart-select {
-    bottom: 13.4rem;
-    left: 1rem;
+    max-width: calc(100vw - 2rem);
+    max-height: 40vh;
   }
 
   .type-legend {
@@ -801,7 +823,16 @@ select {
   pointer-events: none;
 }
 
+/*
+ * Only the card stacks themselves may capture pointer events. The tray row spans the
+ * whole gap between the filters and the zoom control so card capacity can be measured,
+ * and any of that row not covered by a card must stay draggable as map.
+ */
 .map-filters .vessel-tray-cards {
+  pointer-events: none;
+}
+
+.map-filters .vessel-tray-stack {
   pointer-events: auto;
 }
 
@@ -849,8 +880,10 @@ select {
   display: flex;
   flex-wrap: nowrap;
   gap: 0.45rem;
-  pointer-events: auto;
+  pointer-events: none;
   overflow: hidden;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .vessel-tray-card {
@@ -1180,6 +1213,15 @@ select {
 
 .vessel-tray-compare-row span {
   opacity: 0.8;
+}
+
+.vessel-tray-compare-row--warn strong {
+  color: #fca5a5;
+}
+
+.vessel-tray-compare-row--warn span {
+  opacity: 1;
+  color: #fca5a5;
 }
 
 .vessel-tray-compare-row strong {

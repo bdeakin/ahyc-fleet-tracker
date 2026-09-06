@@ -26,8 +26,11 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Markers color-coded by AIS ship type (sailing white, pleasure pink); club vessels keep registry color + star
 - Kiosk search: type vessel name or MMSI to zoom and inspect (scoped to vessels loaded for the current view)
 - New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known
-- Default basemap: Carto Voyager harbor layer (`CARTO_API_KEY` → keyed tiles) + OpenSeaMap seamarks; Esri Ocean for regional overview; NOAA WMS optional
-- When the view covers a charted area, a **Historical chart** dropdown offers Dudley 1646 (eastern seaboard at regional zoom) and 1776 / 1845 / 1895 / 1910 harbor sheets that replace the modern basemap
+- Default chart: **NOAA chart (paper style)** — ENC via the Maritime Chart Service with paper symbols, plain boundaries, four depth shades (12 / 30 / 60 ft), soundings in feet. Carto Voyager harbor layer (`CARTO_API_KEY` → keyed tiles) + OpenSeaMap seamarks (zoom ≥ 14 only), Esri Ocean regional overview, and the all-detail ENC display are the other options
+- One always-visible panel holds **Chart**, **Historical chart** and **Noteworthy traffic**; historical sheets (Dudley 1646, 1776 / 1845 / 1895 / 1910 harbor) can be selected from anywhere and the map flies to their coverage
+- **Noteworthy traffic** (`GET /api/noteworthy?hours=`): Interceptions (converging vessels; pilot transfers near the Ambrose boarding area), Suspected groundings (hard stop where surveyed depth ≈ estimated draught, NOAA NCEI DEM), Need for speed (> 30 kn), Evasive maneuvers, No-wake speeding. Selecting an event draws its tracks and fits the view
+- Speeds ≥ 70 kn are treated as AIS decode errors (102.3 = "not available") and never reported as speed runs
+- Stacked tray cards show distance, bearings, COG, **CPA** and **TCPA**; the CPA row is highlighted inside 0.15 nm / 15 min
 - Live AIS is viewport-scoped and refreshes every 5 seconds; map sets maxZoom for marker clustering; traffic only clusters at far overview (individual ships from bay/harbor scale); filter markers by source (Radio / AISHub / AISStream) and by category (Club boats / Watch list / All other traffic)
 - Click a vessel → right pane can **Add to watch list**; drag tray cards onto each other to compare distance / bearing / COG; **?** opens in-app help
 - Detail pane **Last report** (and tray cards) show a live up-counter of time since that vessel’s latest AIS point

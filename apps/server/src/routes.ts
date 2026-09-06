@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { buildAdventure } from "./narrative.js";
 import { listChartLayers, readMbtilesTile } from "./charts.js";
 import { getDb } from "./db.js";
+import { buildNoteworthy } from "./noteworthy.js";
 import { ingestPosition, listLiveStates, positionsAt, pruneTrafficHistory, queryTracks, trackHistorySpan } from "./tracks.js";
 import {
   getVesselProfile,
@@ -326,6 +327,11 @@ export async function registerRoutes(
   app.get<{ Querystring: { at?: string } }>("/api/tracks/replay", async (req) => {
     const at = req.query.at ? Number(req.query.at) : Date.now();
     return positionsAt(getDb(), at);
+  });
+
+  app.get<{ Querystring: { hours?: string } }>("/api/noteworthy", async (req) => {
+    const hours = Math.min(72, Math.max(1, Number(req.query.hours ?? 24) || 24));
+    return buildNoteworthy(getDb(), hours);
   });
 
   app.get("/api/charts", async () => listChartLayers());

@@ -1,5 +1,17 @@
 # Version history
 
+## 0.9.0 — NOAA paper-style charts, noteworthy traffic, CPA
+
+- New default chart: **NOAA chart (paper style · soundings in feet)** — ENC rendered through the Maritime Chart Service with paper-chart symbols, plain area boundaries, four depth shades at 12 / 30 / 60 ft, and labelled contours. The all-detail ENC display stays available as a second option.
+- OpenSeaMap seamarks only draw at zoom ≥ 14, so buoy labels no longer cover the harbor at overview zoom.
+- **Noteworthy traffic** picker with five detectors over the stored AIS window: **Interceptions** (converging vessels, flagged as pilot transfers near the Ambrose boarding area), **Suspected groundings** (hard stop where surveyed depth is close to the estimated draught), **Need for speed** (over 30 kn), **Evasive maneuvers**, and **No-wake speeding**. Selecting an event draws the tracks and fits the view.
+- Chart, historical chart and noteworthy pickers now live in one always-visible panel; historical sheets can be chosen from anywhere and the map flies to their coverage.
+- Stacked vessel cards show **CPA** and **TCPA**, highlighted when the pair closes inside 0.15 nm within 15 minutes.
+- Implausible AIS speeds (≥ 70 kn, including the 102.3 "not available" sentinel) are ignored by the speed detector.
+- Fixed: the vessel tray no longer swallows mouse drags on the map next to the cards; only the cards themselves take pointer events.
+- Removed the empty **Season adventures** dropdown from the kiosk (the `/adventures` route is unchanged).
+- No-wake pockets now require several *different* vessels sitting still, so a single moored or aground boat cannot create one.
+
 ## 0.8.14 — Historical charts dropdown (viewport-aware)
 
 - When the map view overlaps a chart’s coverage, a **Historical chart** dropdown appears.

@@ -1,5 +1,21 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
-import type { AdventureNarrative, ChartLayer, Vessel, VesselLiveState, VesselProfile, TrackPoint } from "@ahyc/shared";
+import type {
+  AdventureNarrative,
+  ChartLayer,
+  NoteworthyEvent,
+  Vessel,
+  VesselLiveState,
+  VesselProfile,
+  TrackPoint,
+} from "@ahyc/shared";
+
+export type NoteworthyBundle = {
+  generatedAt: number;
+  from: number;
+  to: number;
+  fixCount: number;
+  events: NoteworthyEvent[];
+};
 
 const LOCAL_ADMIN_TOKEN_KEY = "ahyc_admin_token";
 const SUPABASE_ACCESS_TOKEN_KEY = "ahyc_supabase_access_token";
@@ -130,6 +146,7 @@ export const api = {
   },
   vesselProfile: (mmsi: string) => json<VesselProfile>(`/api/vessels/profile/${mmsi}`),
   charts: () => json<ChartLayer[]>("/api/charts"),
+  noteworthy: (hours = 24) => json<NoteworthyBundle>(`/api/noteworthy?hours=${hours}`),
   syncVessels: () => {
     const auth = authHeader();
     if (!auth) return Promise.reject(new Error("401 unauthorized"));

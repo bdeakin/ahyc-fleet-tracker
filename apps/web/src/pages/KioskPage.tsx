@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
@@ -8,7 +8,9 @@ import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import {
   AHYC_CENTER,
   AIS_SOURCE_LABELS,
+  HISTORICAL_CHARTS,
   NOAA_CHART_WMS,
+  NOAA_CHART_WMS_LAYERS_ALL,
   bearingToCardinal,
   chartTileUrl,
   collisionRiskMmsis,
@@ -21,10 +23,14 @@ import {
   historicalChartsForView,
   markerNeedsDarkOutline,
   relativeVesselNav,
+  speedTrackColor,
+  SPEED_RUN_KN,
   waterwayName,
   type AisSource,
   type ChartLayer,
+  type CpaResult,
   type GeoBounds,
+  type NoteworthyEvent,
   type VesselLiveState,
   type VesselProfile,
 } from "@ahyc/shared";
@@ -119,6 +125,74 @@ function inMapBounds(v: VesselLiveState, map: L.Map | null): boolean {
   return map.getBounds().pad(VIEWPORT_PAD).contains([v.lat, v.lon]);
 }
 
+const NOTEWORTHY_HOURS = 24;
+const NOTEWORTHY_REFRESH_MS = 3 * 60_000;
+
+const NOTEWORTHY_KIND_LABEL: Record<NoteworthyEvent["kind"], string> = {
+  interception: "Interceptions — vessels that converged",
+  grounding: "Suspected groundings",
+  speed: `Need for speed — over ${SPEED_RUN_KN} kn`,
+  evasive: "Evasive maneuvers",
+  nowake: "No-wake speeding",
+};
+
+/** Kind order in the picker: the rarer and more consequential first. */
+const NOTEWORTHY_KIND_ORDER: Array<NoteworthyEvent["kind"]> = [
+  "interception",
+  "grounding",
+  "speed",
+  "evasive",
+  "nowake",
+];
+
+function clockLabel(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function noteworthyLabel(e: NoteworthyEvent): string {
+  switch (e.kind) {
+    case "interception": {
+      const a = e.a.name || e.a.mmsi;
+      const b = e.b.name || e.b.mmsi;
+      const lead = e.pilotTransfer ? "Pilot transfer" : "Rendezvous";
+      return `${lead}: ${a} ↔ ${b} · ${e.place} · ${clockLabel(e.ts)}`;
+    }
+    case "grounding": {
+      const depth = e.chartedDepthM != null ? `${(e.chartedDepthM * 3.281).toFixed(0)} ft` : "depth unknown";
+      return `${e.name || e.mmsi} · ${e.confidence} · ${depth} · ${e.place} · ${clockLabel(e.ts)}`;
+    }
+    case "speed":
+      return `${e.name || e.mmsi} · ${e.maxSogKn.toFixed(1)} kn · ${e.place} · ${clockLabel(e.ts)}`;
+    case "evasive":
+      return `${e.name || e.mmsi} · ${Math.round(e.cogDeltaDeg)}° turn at ${e.sogKn.toFixed(1)} kn · ${clockLabel(e.ts)}`;
+    case "nowake":
+      return `${e.name || e.mmsi} · ${e.maxSogKn.toFixed(1)} kn through a no-wake pocket · ${clockLabel(e.ts)}`;
+  }
+}
+
+/** CPA range below which the pair is worth a second look at kiosk scale. */
+const CPA_WARN_NM = 0.15;
+const CPA_WARN_TCPA_MIN = 15;
+
+function cpaIsClose(cpa: CpaResult): boolean {
+  if (cpa.tcpaMin == null || cpa.tcpaMin <= 0) return false;
+  return cpa.dcpaNm <= CPA_WARN_NM && cpa.tcpaMin <= CPA_WARN_TCPA_MIN;
+}
+
+function formatCpa(cpa: CpaResult): string {
+  if (cpa.tcpaMin == null) return `${formatNm(cpa.rangeNm)} (holding station)`;
+  if (cpa.passed) return `${formatNm(cpa.rangeNm)} (opening)`;
+  return formatNm(cpa.dcpaNm);
+}
+
+function formatTcpa(cpa: CpaResult): string {
+  if (cpa.tcpaMin == null) return "no relative motion";
+  if (cpa.tcpaMin <= 0) return "passed";
+  if (cpa.tcpaMin < 1) return `${Math.round(cpa.tcpaMin * 60)}s`;
+  if (cpa.tcpaMin < 60) return `${cpa.tcpaMin.toFixed(1)} min`;
+  return `${(cpa.tcpaMin / 60).toFixed(1)} h`;
+}
+
 /** Live age since the vessel's last AIS / track timestamp (ticks with `nowMs`). */
 function formatElapsedSince(ts: number, nowMs: number): string {
   if (!Number.isFinite(ts) || ts <= 0) return "—";
@@ -135,19 +209,11 @@ function formatElapsedSince(ts: number, nowMs: number): string {
 }
 
 export function KioskPage() {
-  const navigate = useNavigate();
-  const [adventureOptions, setAdventureOptions] = useState<
-    Array<{ vesselId: string; vesselName: string; year: number }>
-  >([]);
-
-  useEffect(() => {
-    api.adventureOptions().then(setAdventureOptions).catch(() => setAdventureOptions([]));
-  }, []);
-
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObj = useRef<L.Map | null>(null);
   const layerRef = useRef<L.Layer | null>(null);
   const historicalLayerRef = useRef<L.ImageOverlay | null>(null);
+  const noteworthyLayerRef = useRef<L.LayerGroup | null>(null);
   const clusterRef = useRef<L.MarkerClusterGroup | L.LayerGroup | null>(null);
   const clubLayerRef = useRef<L.LayerGroup | null>(null);
   const tracksRef = useRef<L.LayerGroup | null>(null);
@@ -165,7 +231,7 @@ export function KioskPage() {
   const trackFitKeyRef = useRef<string | null>(null);
 
   const [charts, setCharts] = useState<ChartLayer[]>([]);
-  const [chartId, setChartId] = useState("harbor-clean");
+  const [chartId, setChartId] = useState("noaa-paper");
   const [live, setLive] = useState(true);
   const [rangeEnd, setRangeEnd] = useState(Date.now());
   const [slider, setSlider] = useState(HOURS * 60); // minutes from start of window
@@ -182,6 +248,8 @@ export function KioskPage() {
   const [mapBounds, setMapBounds] = useState<GeoBounds | null>(null);
   /** When set, replaces the modern basemap with a georeferenced historical chart image. */
   const [historicalChartId, setHistoricalChartId] = useState<string | null>(null);
+  const [noteworthyEvents, setNoteworthyEvents] = useState<NoteworthyEvent[]>([]);
+  const [noteworthyId, setNoteworthyId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<Record<AisSource, boolean>>({
     radio: true,
     aishub: true,
@@ -489,6 +557,7 @@ export function KioskPage() {
       clubLayerRef.current = null;
       tracksRef.current = null;
       historicalLayerRef.current = null;
+      noteworthyLayerRef.current = null;
     };
     // scheduleViewportLive closes over live; map init runs once — live subscription handles fetches.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -499,12 +568,144 @@ export function KioskPage() {
     return historicalChartsForView(mapBounds, mapZoom);
   }, [mapBounds, mapZoom]);
 
-  // Drop historical selection when the viewport leaves all matching charts.
+  /** Pick a historical chart, moving the map to its coverage when it is out of view. */
+  function selectHistoricalChart(id: string | null) {
+    setHistoricalChartId(id);
+    if (!id) return;
+    const chart = historicalChartById(id);
+    const map = mapObj.current;
+    if (!chart || !map) return;
+    const inView = availableHistoricalCharts.some((c) => c.id === id);
+    if (inView) return;
+    map.flyToBounds(
+      [
+        [chart.bounds.south, chart.bounds.west],
+        [chart.bounds.north, chart.bounds.east],
+      ],
+      { duration: 0.9, maxZoom: chart.maxZoom ?? 14 },
+    );
+  }
+
+  const selectedNoteworthy = useMemo(
+    () => noteworthyEvents.find((e) => e.id === noteworthyId) ?? null,
+    [noteworthyEvents, noteworthyId],
+  );
+
   useEffect(() => {
-    if (!historicalChartId) return;
-    if (availableHistoricalCharts.some((c) => c.id === historicalChartId)) return;
-    setHistoricalChartId(null);
-  }, [availableHistoricalCharts, historicalChartId]);
+    const load = () =>
+      api
+        .noteworthy(NOTEWORTHY_HOURS)
+        .then((bundle) => setNoteworthyEvents(bundle.events))
+        .catch(() => undefined);
+    load();
+    const id = window.setInterval(load, NOTEWORTHY_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Draw the selected event: both tracks, the moment it happened, and fit the view to it.
+  useEffect(() => {
+    const map = mapObj.current;
+    if (!map) return;
+    if (noteworthyLayerRef.current) {
+      map.removeLayer(noteworthyLayerRef.current);
+      noteworthyLayerRef.current = null;
+    }
+    const event = selectedNoteworthy;
+    if (!event) return;
+
+    const group = L.layerGroup();
+    const latlngs: L.LatLngExpression[] = [];
+
+    const addTrack = (track: Array<{ lat: number; lon: number; sog: number | null }>, color: string, label: string) => {
+      if (track.length === 0) return;
+      const coords = track.map((p) => [p.lat, p.lon] as L.LatLngExpression);
+      latlngs.push(...coords);
+      L.polyline(coords, { color, weight: 4, opacity: 0.9 }).bindTooltip(label).addTo(group);
+    };
+
+    if (event.kind === "interception") {
+      addTrack(event.a.track, "#5ec8ff", event.a.name || event.a.mmsi);
+      addTrack(event.b.track, "#f6c26b", event.b.name || event.b.mmsi);
+      L.circle([event.lat, event.lon], {
+        radius: Math.max(60, event.closestNm * 1852),
+        color: "#f87171",
+        weight: 2,
+        fillOpacity: 0.12,
+      })
+        .bindTooltip(`Closest approach ${formatNm(event.closestNm)} at ${clockLabel(event.ts)}`)
+        .addTo(group);
+      latlngs.push([event.lat, event.lon]);
+    } else if (event.kind === "grounding") {
+      addTrack(event.track, "#f87171", event.name || event.mmsi);
+      L.circleMarker([event.lat, event.lon], {
+        radius: 10,
+        color: "#f87171",
+        fillColor: "#7f1d1d",
+        fillOpacity: 0.8,
+        weight: 3,
+      })
+        .bindTooltip(`Stopped from ${event.sogBeforeKn.toFixed(1)} kn at ${clockLabel(event.ts)}`)
+        .addTo(group);
+      latlngs.push([event.lat, event.lon]);
+    } else if (event.kind === "speed") {
+      for (let i = 1; i < event.track.length; i++) {
+        const prev = event.track[i - 1]!;
+        const cur = event.track[i]!;
+        L.polyline(
+          [
+            [prev.lat, prev.lon],
+            [cur.lat, cur.lon],
+          ],
+          { color: speedTrackColor(cur.sog ?? prev.sog ?? 0, SPEED_RUN_KN, 45), weight: 5, opacity: 0.95 },
+        ).addTo(group);
+        latlngs.push([prev.lat, prev.lon], [cur.lat, cur.lon]);
+      }
+      L.circleMarker([event.lat, event.lon], {
+        radius: 8,
+        color: "#facc15",
+        fillColor: "#b45309",
+        fillOpacity: 0.85,
+        weight: 3,
+      })
+        .bindTooltip(`${event.maxSogKn.toFixed(1)} kn at ${clockLabel(event.ts)}`)
+        .addTo(group);
+    } else if (event.kind === "evasive") {
+      addTrack(event.track, "#facc15", event.name || event.mmsi);
+      for (const other of event.nearby) {
+        L.circleMarker([other.lat, other.lon], {
+          radius: 6,
+          color: "#94a3b8",
+          fillOpacity: 0.7,
+          weight: 2,
+        })
+          .bindTooltip(`${other.name || other.mmsi} · ${formatNm(other.distanceNm)} off`)
+          .addTo(group);
+        latlngs.push([other.lat, other.lon]);
+      }
+      latlngs.push([event.lat, event.lon]);
+    } else {
+      // Speed-coloured segments make the run through the no-wake pocket obvious.
+      for (let i = 1; i < event.track.length; i++) {
+        const prev = event.track[i - 1]!;
+        const cur = event.track[i]!;
+        L.polyline(
+          [
+            [prev.lat, prev.lon],
+            [cur.lat, cur.lon],
+          ],
+          { color: speedTrackColor(cur.sog ?? prev.sog ?? 0), weight: 5, opacity: 0.95 },
+        ).addTo(group);
+        latlngs.push([prev.lat, prev.lon], [cur.lat, cur.lon]);
+      }
+      latlngs.push([event.lat, event.lon]);
+    }
+
+    group.addTo(map);
+    noteworthyLayerRef.current = group;
+    if (latlngs.length > 0) {
+      map.flyToBounds(L.latLngBounds(latlngs).pad(0.35), { duration: 0.9, maxZoom: 15 });
+    }
+  }, [selectedNoteworthy]);
 
   useEffect(() => {
     const map = mapObj.current;
@@ -563,6 +764,8 @@ export function KioskPage() {
           // Per-URL native zoom: Esri Ocean caps ~z13; Carto/OpenSeaMap stay sharp at harbor zoom.
           maxNativeZoom:
             tile.maxNativeZoom ?? selected.maxNativeZoom ?? tile.maxZoom ?? selected.maxZoom ?? 18,
+          // Seamark labels are baked into the tiles, so that overlay waits for close zooms.
+          minZoom: tile.minZoom ?? 0,
           opacity: tile.opacity ?? 1,
           subdomains: tile.subdomains ?? "abc",
           attribution: i === 0 ? selected.attribution : "",
@@ -575,11 +778,15 @@ export function KioskPage() {
         attribution: "NOAA NCDS MBTiles (local)",
       });
     } else {
-      layerRef.current = L.tileLayer.wms(NOAA_CHART_WMS, {
-        layers: "0,1,2,3,4,5,6,7,8,9,10,11,12",
+      // NOAA ENC via the Maritime Chart Service. The layer's S-52 parameters decide whether
+      // it draws like a paper chart or the full ECDIS display.
+      layerRef.current = L.tileLayer.wms(selected?.url ?? NOAA_CHART_WMS, {
+        layers: selected?.layers ?? NOAA_CHART_WMS_LAYERS_ALL,
         format: "image/png",
-        transparent: true,
-        attribution: "NOAA Chart Display Service",
+        transparent: selected?.transparent ?? true,
+        maxZoom: selected?.maxZoom ?? 18,
+        attribution: selected?.attribution ?? "NOAA Chart Display Service",
+        ...(selected?.params ?? {}),
       });
     }
     layerRef.current.addTo(map);
@@ -971,6 +1178,76 @@ export function KioskPage() {
   }
 
 
+  function renderNoteworthyDetail(event: NoteworthyEvent) {
+    const rows: Array<[string, string]> = [];
+    let title = "";
+    if (event.kind === "interception") {
+      title = event.pilotTransfer ? "Suspected pilot transfer" : "Vessels converged";
+      rows.push(
+        [event.a.name || event.a.mmsi, `${event.a.sogKn?.toFixed(1) ?? "—"} kn · ${formatCourseDeg(event.a.cogDeg)}${event.a.pilot ? " · pilot" : ""}`],
+        [event.b.name || event.b.mmsi, `${event.b.sogKn?.toFixed(1) ?? "—"} kn · ${formatCourseDeg(event.b.cogDeg)}${event.b.pilot ? " · pilot" : ""}`],
+        ["Closest", `${formatNm(event.closestNm)} at ${clockLabel(event.ts)}`],
+        ["Closed from", formatNm(event.approachFromNm)],
+        ["Course match", event.matchedCourse ? `yes (${Math.round(event.courseAlignDeg)}° apart)` : `no (${Math.round(event.courseAlignDeg)}° apart)`],
+        ["Where", event.pilotArea ?? event.place],
+      );
+    } else if (event.kind === "grounding") {
+      title = event.confidence === "likely" ? "Likely grounding" : "Possible grounding";
+      const depthFt = event.chartedDepthM != null ? `${(event.chartedDepthM * 3.281).toFixed(0)} ft` : "unknown";
+      const draughtFt = event.draughtM != null ? `${(event.draughtM * 3.281).toFixed(0)} ft est.` : "unknown";
+      rows.push(
+        ["Vessel", event.name || event.mmsi],
+        ["Stopped", `${event.sogBeforeKn.toFixed(1)} kn → 0 at ${clockLabel(event.ts)}`],
+        ["Stayed put", `${Math.round(event.stoppedForMs / 60_000)} min`],
+        ["Surveyed depth", depthFt],
+        ["Draught", draughtFt],
+        ["Under keel", event.clearanceM != null ? `${(event.clearanceM * 3.281).toFixed(1)} ft` : "unknown"],
+        ["Where", event.place],
+      );
+    } else if (event.kind === "speed") {
+      title = "Need for speed";
+      rows.push(
+        ["Vessel", event.name || event.mmsi],
+        ["Top speed", `${event.maxSogKn.toFixed(1)} kn`],
+        ["Average", `${event.meanSogKn.toFixed(1)} kn`],
+        ["Held for", `${Math.max(1, Math.round(event.durationMs / 60_000))} min · ${formatNm(event.distanceNm)}`],
+        ["Where", event.place],
+        ["Time", clockLabel(event.ts)],
+      );
+    } else if (event.kind === "evasive") {
+      title = "Evasive maneuver";
+      rows.push(
+        ["Vessel", event.name || event.mmsi],
+        ["Turn", `${Math.round(event.cogDeltaDeg)}° at ${event.sogKn.toFixed(1)} kn`],
+        ["Rate", `${Math.round(event.turnRateDegPerMin)}°/min`],
+        ["Time", clockLabel(event.ts)],
+        ["Traffic nearby", event.nearby.length > 0 ? `${event.nearby.length} within 0.45 nm` : "none reported"],
+      );
+    } else {
+      title = "No-wake speeding";
+      rows.push(
+        ["Vessel", event.name || event.mmsi],
+        ["Peak speed", `${event.maxSogKn.toFixed(1)} kn`],
+        ["Average", `${event.meanSogKn.toFixed(1)} kn`],
+        ["Time", clockLabel(event.ts)],
+      );
+    }
+    return (
+      <>
+        <div className="noteworthy-detail-title">{title}</div>
+        {rows.map(([label, value]) => (
+          <div key={label} className="noteworthy-detail-row">
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+        <button type="button" className="noteworthy-clear" onClick={() => setNoteworthyId(null)}>
+          Clear event
+        </button>
+      </>
+    );
+  }
+
   function renderRelativeNav(a: VesselLiveState, b: VesselLiveState) {
     const nav = relativeVesselNav(
       { lat: a.lat, lon: a.lon, sog: a.sog, cog: a.cog, heading: a.heading },
@@ -986,6 +1263,16 @@ export function KioskPage() {
         <div className="vessel-tray-compare-row">
           <span>Distance</span>
           <strong>{formatNm(nav.distanceNm)}</strong>
+        </div>
+        <div
+          className={`vessel-tray-compare-row${cpaIsClose(nav.cpa) ? " vessel-tray-compare-row--warn" : ""}`}
+        >
+          <span>CPA</span>
+          <strong>{formatCpa(nav.cpa)}</strong>
+        </div>
+        <div className="vessel-tray-compare-row">
+          <span>TCPA</span>
+          <strong>{formatTcpa(nav.cpa)}</strong>
         </div>
         <div className="vessel-tray-compare-row">
           <span>{nameA} → {nameB}</span>
@@ -1043,25 +1330,6 @@ export function KioskPage() {
         >
           ?
         </button>
-        <label className="kiosk-adventures">
-          <span className="kiosk-adventures-label">Season adventures</span>
-          <select
-            aria-label="Season adventures"
-            value=""
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v) navigate(`/adventures/${v}`);
-              e.target.value = "";
-            }}
-          >
-            <option value="">Season adventures…</option>
-            {adventureOptions.map((o) => (
-              <option key={`${o.vesselId}:${o.year}`} value={`${o.vesselId}/${o.year}`}>
-                {o.vesselName} - {o.year}
-              </option>
-            ))}
-          </select>
-        </label>
         <Link to="/admin">Admin</Link>
         {!live && (
           <button
@@ -1081,52 +1349,81 @@ export function KioskPage() {
           </button>
         )}
       </div>
-      <div className="chart-select">
-        <select value={chartId} onChange={(e) => setChartId(e.target.value)} aria-label="Chart layer">
-          {(charts.length
-            ? charts
-            : [
-                {
-                  id: "ocean-simple",
-                  kind: "xyz" as const,
-                  label: "Simplified ocean (depth + place names)",
-                  urls: [],
-                  attribution: "",
-                  maxNativeZoom: 13,
-                },
-              ]
-          ).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      {(availableHistoricalCharts.length > 0 || historicalChartId) && (
-        <div className="historical-chart-select" role="region" aria-label="Historical charts">
-          <label htmlFor="historical-chart-select">Historical chart</label>
-          <select
-            id="historical-chart-select"
-            value={historicalChartId ?? ""}
-            onChange={(e) => setHistoricalChartId(e.target.value || null)}
-          >
-            <option value="">Modern map</option>
-            {availableHistoricalCharts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-            {/* Keep the active choice visible even if a brief pan left coverage. */}
-            {historicalChartId &&
-              !availableHistoricalCharts.some((c) => c.id === historicalChartId) &&
-              historicalChartById(historicalChartId) && (
-                <option value={historicalChartId}>
-                  {historicalChartById(historicalChartId)!.label}
+      <div className="map-layers" role="region" aria-label="Chart and event layers">
+        <div className="map-layers-row">
+          <label className="map-layers-field">
+            <span>Chart</span>
+            <select value={chartId} onChange={(e) => setChartId(e.target.value)} aria-label="Chart layer">
+              {(charts.length
+                ? charts
+                : [
+                    {
+                      id: "ocean-simple",
+                      kind: "xyz" as const,
+                      label: "Simplified ocean (depth + place names)",
+                      urls: [],
+                      attribution: "",
+                      maxNativeZoom: 13,
+                    },
+                  ]
+              ).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
                 </option>
-              )}
-          </select>
+              ))}
+            </select>
+          </label>
+          <label className="map-layers-field">
+            <span>Historical chart</span>
+            <select
+              value={historicalChartId ?? ""}
+              aria-label="Historical chart overlay"
+              onChange={(e) => selectHistoricalChart(e.target.value || null)}
+            >
+              <option value="">Modern chart</option>
+              {HISTORICAL_CHARTS.map((c) => {
+                const inView = availableHistoricalCharts.some((x) => x.id === c.id);
+                return (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                    {inView ? "" : " — jump to coverage"}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          <label className="map-layers-field">
+            <span>Noteworthy traffic</span>
+            <select
+              value={noteworthyId ?? ""}
+              aria-label="Noteworthy traffic events"
+              onChange={(e) => setNoteworthyId(e.target.value || null)}
+            >
+              <option value="">
+                {noteworthyEvents.length > 0
+                  ? `None — ${noteworthyEvents.length} in last ${NOTEWORTHY_HOURS}h`
+                  : "None found in stored traffic"}
+              </option>
+              {NOTEWORTHY_KIND_ORDER.map((kind) => {
+                const group = noteworthyEvents.filter((e) => e.kind === kind);
+                if (group.length === 0) return null;
+                return (
+                  <optgroup key={kind} label={`${NOTEWORTHY_KIND_LABEL[kind]} (${group.length})`}>
+                    {group.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {noteworthyLabel(e)}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+          </label>
         </div>
-      )}
+        {selectedNoteworthy && (
+          <div className="noteworthy-detail">{renderNoteworthyDetail(selectedNoteworthy)}</div>
+        )}
+      </div>
       <aside className="type-legend" aria-label="Vessel type colors">
         {TYPE_LEGEND.map((item) => (
           <div key={item.label} className="type-legend-row">

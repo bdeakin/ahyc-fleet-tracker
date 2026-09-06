@@ -9,6 +9,10 @@ import {
   ESRI_OCEAN_BASE,
   ESRI_OCEAN_MAX_NATIVE_ZOOM,
   ESRI_OCEAN_REFERENCE,
+  NOAA_CHART_ATTRIBUTION,
+  NOAA_CHART_WMS_LAYERS_ALL,
+  NOAA_CHART_WMS_LAYERS_PAPER,
+  NOAA_PAPER_CHART_PARAMS,
   OPENSEAMAP_ATTRIBUTION,
   OPENSEAMAP_SEAMARK,
 } from "@ahyc/shared";
@@ -32,6 +36,16 @@ export function listChartLayers(): ChartLayer[] {
   }
   const layers: ChartLayer[] = [
     {
+      id: "noaa-paper",
+      kind: "noaa-wms",
+      label: "NOAA chart (paper style · soundings in feet)",
+      layers: NOAA_CHART_WMS_LAYERS_PAPER,
+      params: NOAA_PAPER_CHART_PARAMS,
+      transparent: false,
+      attribution: NOAA_CHART_ATTRIBUTION,
+      maxZoom: 18,
+    },
+    {
       id: "harbor-clean",
       kind: "xyz",
       label: "Harbor (sharp coast + buoys / lights)",
@@ -42,6 +56,8 @@ export function listChartLayers(): ChartLayer[] {
           url: OPENSEAMAP_SEAMARK,
           maxNativeZoom: 18,
           maxZoom: 20,
+          // Seamark tiles bake in their labels, so they only stay readable close in.
+          minZoom: 14,
           opacity: 0.95,
         },
       ],
@@ -68,13 +84,21 @@ export function listChartLayers(): ChartLayer[] {
       urls: [
         { url: ESRI_OCEAN_BASE, maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM },
         { url: ESRI_OCEAN_REFERENCE, maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM },
-        { url: OPENSEAMAP_SEAMARK, maxNativeZoom: 18, opacity: 0.95 },
+        { url: OPENSEAMAP_SEAMARK, maxNativeZoom: 18, minZoom: 14, opacity: 0.95 },
       ],
       attribution: `${ESRI_OCEAN_ATTRIBUTION} | ${OPENSEAMAP_ATTRIBUTION}`,
       maxZoom: 18,
       maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM,
     },
-    { id: "noaa-wms", kind: "noaa-wms", label: "NOAA Chart Display (full WMS)" },
+    {
+      id: "noaa-wms",
+      kind: "noaa-wms",
+      label: "NOAA chart (all detail · ENC display)",
+      layers: NOAA_CHART_WMS_LAYERS_ALL,
+      transparent: false,
+      attribution: NOAA_CHART_ATTRIBUTION,
+      maxZoom: 18,
+    },
   ];
   for (const file of fs.readdirSync(paths.charts)) {
     if (!file.endsWith(".mbtiles")) continue;

@@ -357,6 +357,11 @@ export function waterwayName(lat: number, lon: number): string {
   return place.label;
 }
 
+/** Full place label with the conversational “On the …” prefix dropped. */
+export function placeLabel(lat: number, lon: number): string {
+  return describePlace(lat, lon).label.replace(/^(?:On|In)\s+(?:the\s+)?/i, "");
+}
+
 export type MotionFix = {
   mmsi: string;
   lat: number;
@@ -482,6 +487,25 @@ export function collisionRiskMmsis(vessels: MotionFix[]): Set<string> {
 
 
 
+/** Closest point of approach for a pair of fixes, assuming both hold course and speed. */
+export type CpaResult = {
+  /** Range at CPA in nautical miles. */
+  dcpaNm: number;
+  /** Minutes until CPA; negative when CPA is already astern, null with no relative motion. */
+  tcpaMin: number | null;
+  /** Present range in nautical miles. */
+  rangeNm: number;
+  /** Relative speed in knots. */
+  relativeSpeedKn: number;
+  /** True while the range is shrinking. */
+  closing: boolean;
+  /** True once the vessels are opening again (CPA in the past). */
+  passed: boolean;
+  /** Where each vessel sits at CPA, for plotting. */
+  cpaA: { lat: number; lon: number } | null;
+  cpaB: { lat: number; lon: number } | null;
+};
+
 /** Pairwise nav between two vessel fixes for tray card stacks. */
 export type RelativeVesselNav = {
   distanceNm: number;
@@ -497,7 +521,69 @@ export type RelativeVesselNav = {
   cogB: number | null;
   sogA: number | null;
   sogB: number | null;
+  cpa: CpaResult;
 };
+
+/** Minutes of relative motion below which CPA is meaningless (both effectively holding station). */
+const CPA_MIN_RELATIVE_SPEED_KN = 0.2;
+
+function offsetLatLon(
+  from: { lat: number; lon: number },
+  northNm: number,
+  eastNm: number,
+): { lat: number; lon: number } {
+  const lat = from.lat + northNm / 60;
+  const cos = Math.cos((from.lat * Math.PI) / 180);
+  return { lat, lon: from.lon + eastNm / (60 * (Math.abs(cos) < 1e-6 ? 1e-6 : cos)) };
+}
+
+/**
+ * CPA / TCPA from two AIS fixes. Vessels without usable COG/SOG are treated as
+ * stationary, so a mover vs a moored boat still yields a useful CPA.
+ */
+export function cpaBetween(
+  a: { lat: number; lon: number; sog?: number | null; cog?: number | null },
+  b: { lat: number; lon: number; sog?: number | null; cog?: number | null },
+): CpaResult {
+  const fixA: MotionFix = { mmsi: "a", lat: a.lat, lon: a.lon, sog: a.sog ?? null, cog: a.cog ?? null };
+  const fixB: MotionFix = { mmsi: "b", lat: b.lat, lon: b.lon, sog: b.sog ?? null, cog: b.cog ?? null };
+  const rangeNm = haversineNm(a.lat, a.lon, b.lat, b.lon);
+  const va = velocityOf(fixA);
+  const vb = velocityOf(fixB);
+  // nm per minute in the local north/east frame
+  const dv = { n: vb.n - va.n, e: vb.e - va.e };
+  const dp = relativeNm(fixA, fixB);
+  const relativeSpeedKn = Math.hypot(dv.n, dv.e) * 60;
+
+  if (relativeSpeedKn < CPA_MIN_RELATIVE_SPEED_KN) {
+    return {
+      dcpaNm: rangeNm,
+      tcpaMin: null,
+      rangeNm,
+      relativeSpeedKn,
+      closing: false,
+      passed: false,
+      cpaA: null,
+      cpaB: null,
+    };
+  }
+
+  const dv2 = dv.n * dv.n + dv.e * dv.e;
+  const tcpaMin = -(dp.n * dv.n + dp.e * dv.e) / dv2;
+  const cn = dp.n + dv.n * tcpaMin;
+  const ce = dp.e + dv.e * tcpaMin;
+  const dcpaNm = Math.hypot(cn, ce);
+  return {
+    dcpaNm,
+    tcpaMin,
+    rangeNm,
+    relativeSpeedKn,
+    closing: tcpaMin > 0,
+    passed: tcpaMin <= 0,
+    cpaA: tcpaMin > 0 ? offsetLatLon(a, va.n * tcpaMin, va.e * tcpaMin) : null,
+    cpaB: tcpaMin > 0 ? offsetLatLon(b, vb.n * tcpaMin, vb.e * tcpaMin) : null,
+  };
+}
 
 function normalizeCourse(deg: number | null | undefined): number | null {
   if (deg == null || !Number.isFinite(deg) || deg < 0 || deg >= 360) return null;
@@ -551,5 +637,6 @@ export function relativeVesselNav(
     cogB: normalizeCourse(b.cog ?? null),
     sogA: a.sog ?? null,
     sogB: b.sog ?? null,
+    cpa: cpaBetween(a, b),
   };
 }

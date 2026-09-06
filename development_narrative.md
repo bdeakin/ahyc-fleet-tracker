@@ -1,5 +1,29 @@
 # Development narrative
 
+## 2026-09-06 — Charts that look like charts
+
+The kiosk wanted the look of a NOAA paper chart: soundings, depth tints, magenta aids, buff land. NOAA cancelled its raster charts, so the closest live source is the ENC data rendered through NOAA's Maritime Chart Service, which accepts S-52 mariner settings per request. Comparing renders against a paper sheet of Sandy Hook, two settings did most of the work: dropping the `OTHER` display category (that is where the hatching, data-quality boxes and AIO overlays come from) and asking for paper-chart point symbols with plain area boundaries. Four depth shades at 12 / 30 / 60 ft in feet finish it, matching the New York Harbor sheets. The layer is now the default; the full ECDIS display is still selectable.
+
+OpenSeaMap seamarks were the other source of clutter — their labels are baked into the tiles, so at bay zoom every buoy name overlapped. They now start at zoom 14.
+
+## 2026-09-06 — Noteworthy traffic
+
+The detectors in `packages/shared/src/noteworthyTraffic.ts` had no route and no UI. They now sit behind `GET /api/noteworthy`, which walks the stored AIS window once every few minutes and caches the result, and a picker on the map draws whichever event you select.
+
+Three detectors are new:
+
+- **Interceptions** — pairs whose tracks close from over half a mile to alongside (within ~220 m). Around Ambrose this is mostly Sandy Hook pilots boarding or landing a pilot: the event is marked as a pilot transfer when either vessel is a pilot boat by AIS type or name and the two either matched course or met inside a known boarding area.
+- **Suspected groundings** — a vessel that goes from making way to stopped in one report and stays put somewhere no other traffic stops. Our AIS feeds do not carry static draught, so draught is estimated from ship type and length, and depth comes from NOAA NCEI's DEM mosaic (cached per ~100 m cell in `depth_samples`). Under-keel clearance decides between *possible* and *likely*; comfortable water drops the event entirely.
+- **Need for speed** — sustained runs over 30 kn. Speeds at or above 70 kn are dropped as decode errors rather than reported, which also covers the AIS 102.3 kn "not available" sentinel.
+
+Detecting no-wake speeding used to treat any cell with enough stopped fixes as a no-wake pocket, so an aground boat manufactured a pocket and then "sped" through it on the way in. A pocket now needs stopped fixes from more than one vessel.
+
+## 2026-09-06 — CPA on stacked cards, and a tray that stops eating drags
+
+Stacking two vessel cards already showed range, bearings and courses; it now also shows CPA and TCPA, computed from both fixes assuming each holds course and speed, with the row highlighted when the pair closes inside 0.15 nm within 15 minutes. Vessels without usable COG/SOG count as stationary, so a mover against a moored boat still yields a useful answer.
+
+The tray row spans the width between the filter panels and the zoom control so the app can measure how many cards fit. That whole row was capturing mouse events, which is why the map would not drag to the right of the cards. Only the card stacks take pointer events now.
+
 ## 2026-09-06 — Historical charts on the kiosk
 
 Operators can switch the basemap to period charts when the viewport intersects coverage. A **Historical chart** control offers Robert Dudley’s **1646** eastern-seaboard general chart (regional zoom), plus **1776** Entrance of Hudson’s River and **1845 / 1895 / 1910** NY Bay sheets. Selecting one swaps modern tiles for a georeferenced image overlay; assets live under `/historical-charts/`.

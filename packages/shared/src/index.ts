@@ -123,13 +123,28 @@ export type ChartTileUrl = {
   maxZoom?: number;
   /** Highest zoom with real tiles; Leaflet overzooms beyond this instead of fetching blanks. */
   maxNativeZoom?: number;
+  /** Lowest zoom the overlay draws at — keeps dense overlays (seamarks) out of wide views. */
+  minZoom?: number;
   opacity?: number;
   /** Leaflet `{s}` subdomain string, e.g. `"abcd"`. */
   subdomains?: string;
 };
 
 export type ChartLayer =
-  | { id: string; kind: "noaa-wms"; label: string }
+  | {
+      id: string;
+      kind: "noaa-wms";
+      label: string;
+      /** WMS endpoint; defaults to `NOAA_CHART_WMS`. */
+      url?: string;
+      /** Comma-separated WMS layer names. */
+      layers?: string;
+      /** S-52 display parameters passed through on every GetMap. */
+      params?: Record<string, string>;
+      transparent?: boolean;
+      attribution?: string;
+      maxZoom?: number;
+    }
   | {
       id: string;
       kind: "xyz";
@@ -294,6 +309,52 @@ export function deepInsideBbox(
 export const NOAA_CHART_WMS =
   "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/WMSServer";
 
+/** Every view group the NOAA Maritime Chart Service publishes (base through overscale warnings). */
+export const NOAA_CHART_WMS_LAYERS_ALL = "0,1,2,3,4,5,6,7,8,9,10,11,12";
+
+/**
+ * View groups that make up a readable chart: chart info, natural/man-made features,
+ * depths, seabed, traffic routes, special areas, aids to navigation, small-craft services.
+ * Data-quality, low-accuracy and AIO layers (8–12) are what turn the display into hatching.
+ */
+export const NOAA_CHART_WMS_LAYERS_PAPER = "0,1,2,3,4,5,6,7";
+
+/**
+ * S-52 mariner settings that make the ENC render like a NOAA paper chart:
+ * paper-chart point symbols, plain area boundaries, four depth shades with the
+ * traditional 12 / 30 / 60 ft tints, soundings in feet, labelled contours.
+ * Names are the Maritime Chart Service parameter names (case-sensitive values are codes).
+ */
+export const NOAA_PAPER_CHART_PARAMS: Record<string, string> = {
+  /** 1 = DISPLAYBASE, 2 = STANDARD. Dropping 4 (OTHER) removes the dense hatching. */
+  DisplayCategory: "1,2",
+  /** 2 = paper chart symbols (1 = simplified ECDIS shapes). */
+  PointSymbolizationType: "2",
+  /** 1 = plain boundaries, as drawn on paper charts. */
+  AreaSymbolizationType: "1",
+  /** 1 = four depth shades. */
+  TwoDepthShades: "1",
+  ShallowContour: "3.6",
+  SafetyContour: "9.1",
+  DeepContour: "18.3",
+  /** 2 = feet, the unit on NOAA's New York Harbor charts. */
+  DisplayDepthUnits: "2",
+  LabelContours: "2",
+  LabelSafetyContours: "2",
+  /** 2 = honor SCAMIN so features appear at their intended scale. */
+  HonorScamin: "2",
+  /** 2 = off; halos are an ECDIS screen convention. */
+  TextHalo: "2",
+  /** 2 = suppress isolated-danger symbols so the original soundings stay visible. */
+  IsolatedDangersOff: "2",
+  /** 2 = off; cell outlines are not chart content. */
+  DisplayFrames: "2",
+  RemoveDuplicateText: "2",
+};
+
+export const NOAA_CHART_ATTRIBUTION =
+  'Chart data &copy; <a href="https://nauticalcharts.noaa.gov/">NOAA</a> ENC via Maritime Chart Service';
+
 export function inBbox(lat: number, lon: number, bbox: BBox = TRAFFIC_BBOX): boolean {
   return lat >= bbox.minLat && lat <= bbox.maxLat && lon >= bbox.minLon && lon <= bbox.maxLon;
 }
@@ -450,17 +511,47 @@ export {
   bearingDeg,
   bearingToCardinal,
   describePlace,
+  placeLabel,
   waterwayName,
   collisionRiskMmsis,
+  cpaBetween,
   relativeVesselNav,
   relativeBearingDeg,
   describeRelativeBearing,
   formatCourseDeg,
   type MotionFix,
   type CollisionRisk,
+  type CpaResult,
   type PlaceDescription,
   type RelativeVesselNav,
 } from "./harborGeo.js";
+
+export {
+  PILOT_BOARDING_AREAS,
+  DRAUGHT_ESTIMATE_M,
+  IMPLAUSIBLE_SOG_KN,
+  SPEED_RUN_KN,
+  cogDeltaDeg,
+  detectEvasiveManeuvers,
+  detectInterceptions,
+  detectNoWakeSpeeding,
+  detectSpeedRuns,
+  detectSuddenStops,
+  estimateDraughtM,
+  gradeGrounding,
+  plausibleSog,
+  speedTrackColor,
+  type EvasiveManeuverEvent,
+  type SpeedRunEvent,
+  type InterceptionEvent,
+  type InterceptionParty,
+  type NearbyVesselSnapshot,
+  type NoWakeSpeedingEvent,
+  type NoteworthyEvent,
+  type NoteworthyFix,
+  type SuspectedGroundingEvent,
+  type TrackSegmentPoint,
+} from "./noteworthyTraffic.js";
 
 export {
   HISTORICAL_CHARTS,

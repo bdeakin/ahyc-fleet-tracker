@@ -64,12 +64,24 @@ Kiosk checkboxes filter markers by source (Radio / AISHub / AISStream).
 
 ## Charts
 
-- Default operational basemap: **Carto Voyager** (sharp coast/place names through harbor zoom) + OpenSeaMap seamarks for buoys/lights. Set `CARTO_API_KEY` so tiles use `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=…`; without it, the public `{s}.basemaps.cartocdn.com` CDN is used.
+- Default chart: **NOAA chart (paper style)** — ENC data rendered by NOAA's Maritime Chart Service WMS (`NOAA_CHART_WMS`) with the S-52 mariner settings in `NOAA_PAPER_CHART_PARAMS`: display categories `DISPLAYBASE,STANDARD` only (view groups 0–7), paper-chart point symbols, plain area boundaries, four depth shades at 3.6 / 9.1 / 18.3 m (12 / 30 / 60 ft), soundings and contour labels in feet. NOAA retired its raster charts, so this is the closest live equivalent of a paper sheet.
+- Alternate operational basemap: **Carto Voyager** (sharp coast/place names through harbor zoom) + OpenSeaMap seamarks for buoys/lights. Set `CARTO_API_KEY` so tiles use `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=…`; without it, the public `{s}.basemaps.cartocdn.com` CDN is used.
 - **Historical charts:** when the viewport overlaps coverage, a dropdown offers public-domain sheets as Leaflet `imageOverlay` basemap replacements — Dudley **1646** eastern seaboard (regional zoom), **1776** Hudson entrance, and **1845 / 1895 / 1910** NY Bay (`packages/shared` `HISTORICAL_CHARTS`, assets under `apps/web/public/historical-charts/`).
 - Regional overview: Esri World Ocean Base + Ocean Reference (bathymetry). Native zoom capped (~z13) with Leaflet overzoom; optional OpenSeaMap seamark overlay.
-- Optional full NOAA Chart Display Service WMS (selectable in the kiosk).
+- OpenSeaMap seamark tiles carry baked-in labels, so those overlays set `minZoom: 14` (`ChartTileUrl.minZoom`).
+- The full ENC display (all view groups, default S-52 settings) remains selectable as **NOAA chart (all detail)**.
 - Optional offline: MBTiles files in `data/charts`, served as XYZ with TMS→XYZ conversion (Pi).
-- `ChartLayer` kinds: `xyz` (one or more tile URL templates), `noaa-wms`, `mbtiles`.
+- `ChartLayer` kinds: `xyz` (one or more tile URL templates), `noaa-wms` (optional `layers` / `params` / `transparent`), `mbtiles`.
+
+## Noteworthy traffic
+
+- `GET /api/noteworthy?hours=` (default 24, max 72) walks every stored fix in the window and caches the bundle for 3 minutes (`apps/server/src/noteworthy.ts`).
+- Detectors live in `packages/shared/src/noteworthyTraffic.ts`:
+  - `detectInterceptions` — pairs that close from ≥ 0.6 nm to ≤ 0.12 nm; marked `pilotTransfer` when either vessel is a pilot boat (AIS type 50 or name) and the two matched course or met inside `PILOT_BOARDING_AREAS` (Ambrose, Sandy Hook).
+  - `detectSuddenStops` + `gradeGrounding` — making way to stopped inside one report, stays put ≥ 12 min, in a cell where no other traffic stops. Draught is estimated (`estimateDraughtM`, AIS static draught is not in our feeds); depth comes from the NOAA NCEI DEM mosaic `identify` endpoint, cached in SQLite `depth_samples` per ~100 m cell (≤ 12 lookups per rebuild). Under-keel clearance ≤ 0.5 m reads *likely*, ≤ 1.5 m *possible*, more is discarded.
+  - `detectSpeedRuns` — two or more consecutive fixes over `SPEED_RUN_KN` (30 kn). `plausibleSog` drops ≥ `IMPLAUSIBLE_SOG_KN` (70) so AIS decode errors and the 102.3 sentinel are never reported.
+  - `detectEvasiveManeuvers`, `detectNoWakeSpeeding` — pre-existing; no-wake pockets now require stopped fixes from more than one vessel.
+- The kiosk picker draws the selected event (both tracks for an interception, speed-coloured segments for speed / no-wake runs) and flies to its bounds.
 
 ## Auth
 
@@ -77,5 +89,5 @@ Kiosk checkboxes filter markers by source (Radio / AISHub / AISStream).
 - **Local admin (default path):** `LOCAL_ADMIN_TOKEN` Bearer secret for `/admin` and mutating APIs when Supabase is unset. Production rejects the insecure `dev-admin-token` default unless `ALLOW_INSECURE_ADMIN=1`.
 - **Supabase (optional):** email/password session; browser sends access token as `Authorization: Bearer …`; server validates with `auth.getUser`. Can also sync the cloud `vessels` table into SQLite.
 
-- Kiosk tray cards can be stacked via HTML5 drag/drop; `relativeVesselNav` in `@ahyc/shared` computes distance, true bearings, COG, and relative bearings. Tray + detail pane show a live last-report age counter from each vessel’s latest `ts`.
+- Kiosk tray cards can be stacked via HTML5 drag/drop; `relativeVesselNav` in `@ahyc/shared` computes distance, true bearings, COG, relative bearings, and `cpaBetween` adds CPA / TCPA (vessels without usable COG/SOG count as stationary). Only the card stacks take pointer events — the tray row itself spans the measurable width and must stay draggable as map. Tray + detail pane show a live last-report age counter from each vessel’s latest `ts`.
 - In-app help overlay documents filters, watch list, stacking, and track controls.

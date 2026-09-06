@@ -124,6 +124,13 @@ function migrate(database: Db) {
       added_at INTEGER NOT NULL,
       note TEXT
     );
+
+    /** Cached NCEI bathymetry samples (cell = lat/lon rounded to ~100 m). */
+    CREATE TABLE IF NOT EXISTS depth_samples (
+      cell TEXT PRIMARY KEY,
+      depth_m REAL,
+      sampled_at INTEGER NOT NULL
+    );
   `);
 
   // Older DBs created traffic_names without ship_type.
