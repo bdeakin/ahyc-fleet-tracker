@@ -26,7 +26,8 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Kiosk search: type vessel name or MMSI to zoom and inspect (scoped to vessels loaded for the current view)
 - New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known
 - Default basemap: Esri Ocean (depth + labels); switcher keeps full NOAA Chart Display WMS
-- Live AIS is viewport-scoped and refreshes every 5 seconds; map sets maxZoom for marker clustering; traffic only clusters at far overview (individual ships from bay/harbor scale); filter markers by source (Radio / AISHub / AISStream)
+- Live AIS is viewport-scoped and refreshes every 5 seconds; map sets maxZoom for marker clustering; traffic only clusters at far overview (individual ships from bay/harbor scale); filter markers by source (Radio / AISHub / AISStream) and by category (Club boats / Watch list / All other traffic)
+- Click a vessel → right pane can **Add to watch list** (indefinite track retention); bottom tray holds recent selections with distance/waterway; collision-risk contacts get a red outline
 
 ## AISHub (Northeast + offshore)
 

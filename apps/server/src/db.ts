@@ -117,6 +117,13 @@ function migrate(database: Db) {
       last_lon REAL,
       last_seen_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS watched_vessels (
+      mmsi TEXT PRIMARY KEY,
+      name TEXT,
+      added_at INTEGER NOT NULL,
+      note TEXT
+    );
   `);
 
   // Older DBs created traffic_names without ship_type.

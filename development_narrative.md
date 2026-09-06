@@ -1,5 +1,13 @@
 # Development narrative
 
+## 2026-09-06 — Watch list + tray + AISHub empty Atlantic region
+
+Operators needed long-lived tracks for boats that are not club registry members. The right-hand vessel pane can now add/remove a watch list entry; prune keeps those MMSIs forever alongside club boats. Filters next to AIS source let the kiosk show club / watch / other traffic independently.
+
+The bottom tray keeps the last few clicked vessels with distance from the Ocean Blvd station and a named waterway, and CPA logic draws a red ring on collision-risk contacts. The ribbon reports AISHub refresh timing, how many club boats are outside the Northeast box, and how deep SQLite history goes for traffic vs club.
+
+Production AISHub looked “stuck” because the Atlantic NE bbox was still too large and returned 0 vessels while Great Lakes succeeded — so New York harbor never got AISHub updates. Regions are smaller now, and empty replies rotate after ~65s instead of waiting the full 5 minutes.
+
 ## 2026-09-06 — Track range buttons on the vessel pane
 
 Operators wanted more than the default 24h track when inspecting a boat. The detail pane now offers 24h / 7d / 30d buttons under the vessel name and plots whatever history SQLite still has for that MMSI (club boats keep longer history; harbor traffic may only retain ~24h).

@@ -26,7 +26,12 @@ export type AishubStatus = {
   /** Region id of the last bbox pull (atlantic-ne / great-lakes). */
   lastRegion: string | null;
   watchlist: string[];
+  /** Club vessels on AISHub MMSI watch (outside/near NE bbox). */
+  outsideBboxClubCount: number;
+  /** Earliest time the next AISHub HTTP call may run. */
   nextAllowedCallAt: number | null;
+  /** Configured min gap between AISHub calls (ms). */
+  intervalMs: number;
 };
 
 type AishubVessel = {
@@ -204,6 +209,7 @@ export class AishubWorker {
 
   getStatus(): AishubStatus {
     const minInterval = Math.max(HARD_MIN_INTERVAL_MS, config.aishubMinIntervalMs);
+    const watchlist = listWatch(getDb());
     return {
       usernameConfigured: Boolean(config.aishubUsername),
       lastCallAt: this.lastCallAt,
@@ -215,8 +221,10 @@ export class AishubWorker {
       lastFetched: this.lastFetched,
       lastIngested: this.lastIngested,
       lastRegion: this.lastRegion,
-      watchlist: listWatch(getDb()),
+      watchlist,
+      outsideBboxClubCount: watchlist.length,
       nextAllowedCallAt: this.lastCallAt == null ? Date.now() : this.lastCallAt + minInterval,
+      intervalMs: minInterval,
     };
   }
 
@@ -300,7 +308,12 @@ export class AishubWorker {
       console.warn("[aishub] tick failed:", this.lastError);
     } finally {
       this.inFlight = false;
-      this.scheduleNext(this.minInterval());
+      // Empty region responses are common for oversized bboxes — rotate sooner (AISHub floor: 1/min).
+      const delay =
+        this.lastFetched === 0
+          ? Math.max(HARD_MIN_INTERVAL_MS + 1_000, 65_000)
+          : this.minInterval();
+      this.scheduleNext(delay);
     }
   }
 

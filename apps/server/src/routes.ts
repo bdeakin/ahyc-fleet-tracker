@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { buildAdventure } from "./narrative.js";
 import { listChartLayers, readMbtilesTile } from "./charts.js";
 import { getDb } from "./db.js";
-import { ingestPosition, listLiveStates, positionsAt, pruneTrafficHistory, queryTracks } from "./tracks.js";
+import { ingestPosition, listLiveStates, positionsAt, pruneTrafficHistory, queryTracks, trackHistorySpan } from "./tracks.js";
 import {
   getVesselProfile,
   scrapeAndStoreProfile,
@@ -16,6 +16,11 @@ import {
   listVessels,
   upsertVessel,
 } from "./vessels.js";
+import {
+  addToWatchlist,
+  listWatchlist,
+  removeFromWatchlist,
+} from "./watchlist.js";
 import type { AisIngestWorker } from "./aisWorker.js";
 import type { AishubWorker } from "./aishubWorker.js";
 import {
@@ -37,6 +42,25 @@ export async function registerRoutes(
   app.get("/api/ais/status", async () => ais.getStatus());
 
   app.get("/api/aishub/status", async () => aishub.getStatus());
+  app.get("/api/tracks/history", async () => trackHistorySpan(getDb()));
+
+  app.get("/api/watchlist", async () => listWatchlist(getDb()));
+
+  app.post<{ Body: { mmsi?: string; name?: string | null; note?: string | null } }>(
+    "/api/watchlist",
+    async (req, reply) => {
+      const mmsi = String(req.body?.mmsi ?? "").trim();
+      if (!mmsi) return reply.code(400).send({ error: "mmsi_required" });
+      return addToWatchlist(getDb(), mmsi, { name: req.body?.name, note: req.body?.note });
+    },
+  );
+
+  app.delete<{ Params: { mmsi: string } }>("/api/watchlist/:mmsi", async (req, reply) => {
+    const ok = removeFromWatchlist(getDb(), req.params.mmsi);
+    if (!ok) return reply.code(404).send({ error: "not_found" });
+    return { ok: true };
+  });
+
 
   app.get("/api/config", async () => ({
     supabase: publicSupabaseConfig(),

@@ -39,6 +39,8 @@ export type VesselLiveState = {
   color?: string;
   /** True when MMSI is in the club vessel registry. */
   registered?: boolean;
+  /** True when MMSI is on the kiosk watch list (indefinite track retention). */
+  watched?: boolean;
   /** ITU-R AIS ship and cargo type code (0–99), when known. */
   shipType?: number | null;
   shipTypeLabel?: string;
@@ -162,15 +164,24 @@ export const DEFAULT_BBOX = {
 
 /**
  * AISHub coverage regions. One huge Chesapeake→Lakes rectangle often returns
- * 0 records from AISHub with no error, so we poll these in rotation.
+ * 0 records from AISHub with no error, so we poll smaller regions in rotation (NY/NJ first).
  * `NORTHEAST_BBOX` is their union (perimeter / watchlist hysteresis).
  */
 export const AISHUB_REGIONS = [
   {
-    id: "atlantic-ne",
-    label: "Atlantic Northeast (Chesapeake → Maine)",
-    minLat: 36.5,
-    minLon: -77.5,
+    // Home waters first — smaller box so AISHub returns data (huge NE boxes often come back empty).
+    id: "ny-nj-midatlantic",
+    label: "NY/NJ Mid-Atlantic (Chesapeake → Long Island)",
+    minLat: 37.0,
+    minLon: -77.0,
+    maxLat: 41.3,
+    maxLon: -71.8,
+  },
+  {
+    id: "new-england",
+    label: "New England (Long Island Sound → Maine)",
+    minLat: 41.0,
+    minLon: -72.5,
     maxLat: 45.0,
     maxLon: -66.5,
   },
@@ -374,4 +385,16 @@ export function markerNeedsDarkOutline(color: string): boolean {
 export function colorForShipTypeLabel(label: string | null | undefined): string {
   return colorForShipType(shipTypeCodeFromLabel(label));
 }
+
+export {
+  HOME_STATION,
+  HARBOR_WATERWAYS,
+  haversineNm,
+  distanceFromHomeNm,
+  formatNm,
+  waterwayName,
+  collisionRiskMmsis,
+  type MotionFix,
+  type CollisionRisk,
+} from "./harborGeo.js";
 

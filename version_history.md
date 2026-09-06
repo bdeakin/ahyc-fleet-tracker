@@ -1,5 +1,13 @@
 # Version history
 
+## 0.8.8 — Watch list, vessel tray, AISHub region fix
+
+- Click any vessel and **Add to watch list** in the right pane — those MMSIs keep track history indefinitely (same as club boats).
+- Map filters beside AIS source: **Club boats / Watch list / All other traffic**.
+- Bottom vessel tray (FIFO ~8) with speed, distance from 307 Ocean Blvd, and named waterway; collision-risk vessels get a red outline.
+- Bottom ribbon shows AISHub countdown, club boats outside the NE bbox, and how far back stored AIS history goes (traffic vs club).
+- AISHub: split the oversized Atlantic NE bbox into NY/NJ Mid-Atlantic + New England; retry sooner when a region returns 0 vessels (harbor was starving while Great Lakes still refreshed).
+
 ## 0.8.7 — Selectable vessel track windows (24h / 7d / 30d)
 
 - Vessel detail pane adds **24h / 7d / 30d** track buttons under the name; the map draws whatever points are stored for that window.

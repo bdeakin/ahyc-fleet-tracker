@@ -718,3 +718,164 @@ select {
 .marker-cluster-large div {
   font-size: 0.8rem;
 }
+
+
+.map-filters {
+  position: absolute;
+  z-index: 1001;
+  left: 1rem;
+  bottom: 9.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: stretch;
+  max-width: min(28rem, calc(100vw - 2rem));
+}
+
+.map-filters .source-filter,
+.map-filters .category-filter {
+  position: static;
+  left: auto;
+  bottom: auto;
+}
+
+.category-filter {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--panel);
+  border: 1px solid rgba(176, 141, 87, 0.35);
+  border-radius: 0.4rem;
+  backdrop-filter: blur(8px);
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.vessel-tray {
+  position: absolute;
+  z-index: 1001;
+  left: 1rem;
+  bottom: 16.5rem;
+  display: grid;
+  gap: 0.4rem;
+  max-width: min(36rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.vessel-tray-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+  padding-left: 0.15rem;
+}
+
+.vessel-tray-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  pointer-events: auto;
+}
+
+.vessel-tray-card {
+  display: flex;
+  align-items: stretch;
+  min-width: 9.5rem;
+  max-width: 12rem;
+  background: var(--panel);
+  border: 1px solid rgba(176, 141, 87, 0.4);
+  border-radius: 0.4rem;
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.vessel-tray-card--alert {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.45);
+}
+
+.vessel-tray-card-main {
+  flex: 1;
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.vessel-tray-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vessel-tray-meta,
+.vessel-tray-area {
+  font-size: 0.68rem;
+  opacity: 0.8;
+}
+
+.vessel-tray-remove {
+  border: none;
+  background: rgba(0, 0, 0, 0.18);
+  color: inherit;
+  padding: 0 0.45rem;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.vessel-marker--alert .vessel-marker-dot {
+  border-color: #fecaca !important;
+  box-shadow:
+    0 0 0 3px #dc2626,
+    0 0 10px rgba(220, 38, 38, 0.65);
+}
+
+.watch-toggle {
+  margin: 0.35rem 0 0.15rem;
+  width: 100%;
+  border: 1px solid rgba(176, 141, 87, 0.55);
+  background: rgba(176, 141, 87, 0.12);
+  color: inherit;
+  border-radius: 0.35rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.watch-toggle--on {
+  border-color: rgba(220, 38, 38, 0.55);
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.watch-toggle:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.watch-toggle-note {
+  margin: 0.15rem 0 0.35rem;
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.ais-hint--status {
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 720px) {
+  .map-filters {
+    bottom: 10.5rem;
+  }
+
+  .vessel-tray {
+    bottom: 17.5rem;
+  }
+}

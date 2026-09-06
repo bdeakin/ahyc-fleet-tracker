@@ -12,6 +12,7 @@ import { config } from "./config.js";
 import type { Db } from "./db.js";
 import { approxMeters } from "./geo.js";
 import { activeMmsis, getVesselByMmsi } from "./vessels.js";
+import { isWatched, watchedMmsis } from "./watchlist.js";
 import { ensureVesselProfileQueued, getVesselProfile } from "./vesselProfiles.js";
 
 const MIN_MOVE_M = 25;
@@ -108,6 +109,7 @@ function toLive(
     name: vessel?.name ?? nameHint ?? meta.name ?? profile.name ?? undefined,
     color: registered ? vessel?.color : colorForShipType(shipType),
     registered,
+    watched: isWatched(db, point.mmsi),
     shipType: shipType ?? null,
     shipTypeLabel,
     lat: point.lat,
@@ -362,15 +364,73 @@ export function positionsAt(db: Db, at: number): VesselLiveState[] {
   return out;
 }
 
+
+/** Oldest/newest stored track points for traffic vs registered club vessels. */
+export function trackHistorySpan(db: Db, now = Date.now()): {
+  trafficOldestTs: number | null;
+  trafficNewestTs: number | null;
+  trafficSpanMs: number | null;
+  clubOldestTs: number | null;
+  clubNewestTs: number | null;
+  clubSpanMs: number | null;
+  trafficRetentionMs: number;
+  pointCount: number;
+} {
+  const club = new Set(activeMmsis(db));
+  const watched = new Set(watchedMmsis(db));
+  const rows = db
+    .prepare("SELECT mmsi, MIN(ts) AS oldest, MAX(ts) AS newest, COUNT(*) AS n FROM track_points GROUP BY mmsi")
+    .all() as Array<{ mmsi: string; oldest: number; newest: number; n: number }>;
+
+  let trafficOldest: number | null = null;
+  let trafficNewest: number | null = null;
+  let clubOldest: number | null = null;
+  let clubNewest: number | null = null;
+  let pointCount = 0;
+
+  for (const row of rows) {
+    pointCount += row.n;
+    const isClub = club.has(row.mmsi) || club.has(row.mmsi.padStart(9, "0"));
+    const isWatchedVessel =
+      watched.has(row.mmsi) || watched.has(row.mmsi.padStart(9, "0"));
+    // Club + watch list are kept indefinitely; report them in the club/long-term bucket.
+    if (isClub || isWatchedVessel) {
+      clubOldest = clubOldest == null ? row.oldest : Math.min(clubOldest, row.oldest);
+      clubNewest = clubNewest == null ? row.newest : Math.max(clubNewest, row.newest);
+    } else {
+      trafficOldest = trafficOldest == null ? row.oldest : Math.min(trafficOldest, row.oldest);
+      trafficNewest = trafficNewest == null ? row.newest : Math.max(trafficNewest, row.newest);
+    }
+  }
+
+  return {
+    trafficOldestTs: trafficOldest,
+    trafficNewestTs: trafficNewest,
+    trafficSpanMs:
+      trafficOldest != null && trafficNewest != null ? Math.max(0, trafficNewest - trafficOldest) : null,
+    clubOldestTs: clubOldest,
+    clubNewestTs: clubNewest,
+    clubSpanMs: clubOldest != null && clubNewest != null ? Math.max(0, clubNewest - clubOldest) : null,
+    trafficRetentionMs: config.trafficRetentionMs,
+    pointCount,
+  };
+}
+
 /** Drop non-registered track points / live rows older than trafficRetentionMs. */
 export function pruneTrafficHistory(db: Db, now = Date.now()): { points: number; live: number } {
   const cutoff = now - config.trafficRetentionMs;
   const registered = new Set(activeMmsis(db));
+  const watched = new Set(watchedMmsis(db));
+  const keepForever = (mmsi: string) =>
+    registered.has(mmsi) ||
+    registered.has(mmsi.padStart(9, "0")) ||
+    watched.has(mmsi) ||
+    watched.has(mmsi.padStart(9, "0"));
 
   const candidates = db
     .prepare("SELECT DISTINCT mmsi FROM track_points WHERE ts < ?")
     .all(cutoff) as Array<{ mmsi: string }>;
-  const traffic = candidates.map((r) => r.mmsi).filter((m) => !registered.has(m));
+  const traffic = candidates.map((r) => r.mmsi).filter((m) => !keepForever(m));
 
   let points = 0;
   const delPoints = db.prepare("DELETE FROM track_points WHERE mmsi = ? AND ts < ?");
@@ -385,7 +445,7 @@ export function pruneTrafficHistory(db: Db, now = Date.now()): { points: number;
   }>;
   const delLive = db.prepare("DELETE FROM vessel_state WHERE mmsi = ?");
   for (const row of liveRows) {
-    if (registered.has(row.mmsi)) continue;
+    if (keepForever(row.mmsi)) continue;
     if (row.ts < cutoff) {
       delLive.run(row.mmsi);
       live += 1;

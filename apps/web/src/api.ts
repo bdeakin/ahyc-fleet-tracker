@@ -29,8 +29,56 @@ export type PublicConfig = {
   };
 };
 
+export type TrackHistorySpan = {
+  trafficOldestTs: number | null;
+  trafficNewestTs: number | null;
+  trafficSpanMs: number | null;
+  clubOldestTs: number | null;
+  clubNewestTs: number | null;
+  clubSpanMs: number | null;
+  trafficRetentionMs: number;
+  pointCount: number;
+};
+
+export type WatchedVessel = {
+  mmsi: string;
+  name: string | null;
+  addedAt: number;
+  note: string | null;
+};
+
+export type AishubStatus = {
+  usernameConfigured: boolean;
+  lastCallAt: number | null;
+  lastBboxAt: number | null;
+  lastMmsiAt: number | null;
+  lastError: string | null;
+  callCount: number;
+  ingestCount: number;
+  lastFetched: number;
+  lastIngested: number;
+  lastRegion: string | null;
+  /** Club MMSIs on the AISHub perimeter / offshore watchlist. */
+  watchlist: string[];
+  /** Same as watchlist.length — club vessels tracked outside/near the NE bbox. */
+  outsideBboxClubCount: number;
+  nextAllowedCallAt: number | null;
+  intervalMs: number;
+};
+
 export const api = {
   config: () => json<PublicConfig>("/api/config"),
+  aishubStatus: () => json<AishubStatus>("/api/aishub/status"),
+  trackHistory: () => json<TrackHistorySpan>("/api/tracks/history"),
+  watchlist: () => json<WatchedVessel[]>("/api/watchlist"),
+  addWatch: (mmsi: string, name?: string | null) =>
+    json<WatchedVessel>("/api/watchlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mmsi, name: name ?? null }),
+    }),
+  removeWatch: (mmsi: string) =>
+    json<{ ok: boolean }>(`/api/watchlist/${encodeURIComponent(mmsi)}`, { method: "DELETE" }),
   vessels: () => json<Vessel[]>("/api/vessels"),
   live: (bbox?: { minLat: number; minLon: number; maxLat: number; maxLon: number }) => {
     if (!bbox) return json<VesselLiveState[]>("/api/live");

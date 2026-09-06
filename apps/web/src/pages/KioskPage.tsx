@@ -9,14 +9,18 @@ import {
   AHYC_CENTER,
   AIS_SOURCE_LABELS,
   NOAA_CHART_WMS,
+  collisionRiskMmsis,
   colorForShipType,
+  distanceFromHomeNm,
+  formatNm,
   markerNeedsDarkOutline,
+  waterwayName,
   type AisSource,
   type ChartLayer,
   type VesselLiveState,
   type VesselProfile,
 } from "@ahyc/shared";
-import { api, liveSocket } from "../api";
+import { api, liveSocket, type AishubStatus, type TrackHistorySpan } from "../api";
 
 const HOURS = 48;
 const TRACK_HOURS = 24;
@@ -34,6 +38,8 @@ const TRAIL_MIN_ZOOM = 11;
 const MAX_SHORT_TRAILS = 50;
 const VIEWPORT_PAD = 0.2;
 const VIEWPORT_DEBOUNCE_MS = 220;
+/** Max vessel cards in the bottom tray (FIFO). */
+const TRAY_MAX = 8;
 
 const TYPE_LEGEND: Array<{ color: string; label: string }> = [
   { color: "#1f6f8b", label: "AHYC club ★" },
@@ -55,6 +61,14 @@ const SOURCE_FILTERS: Array<{ id: AisSource; label: string }> = [
   { id: "aisstream", label: "AISStream" },
 ];
 
+type TrafficCategory = "club" | "watch" | "other";
+
+const TRAFFIC_CATEGORY_FILTERS: Array<{ id: TrafficCategory; label: string }> = [
+  { id: "club", label: "Club boats" },
+  { id: "watch", label: "Watch list" },
+  { id: "other", label: "All other traffic" },
+];
+
 function markerColor(v: VesselLiveState): string {
   if (v.registered) return v.color ?? "#1f6f8b";
   if (v.color) return v.color;
@@ -67,6 +81,18 @@ function sourceAllowed(
 ): boolean {
   const src = (v.source ?? "unknown") as AisSource;
   return filter[src] !== false;
+}
+
+function categoryAllowed(
+  v: VesselLiveState,
+  filter: Record<TrafficCategory, boolean>,
+  watched: Set<string>,
+): boolean {
+  if (v.registered) return filter.club !== false;
+  if (v.watched || watched.has(v.mmsi) || watched.has(v.mmsi.padStart(9, "0"))) {
+    return filter.watch !== false;
+  }
+  return filter.other !== false;
 }
 
 function mapBbox(map: L.Map): { minLat: number; minLon: number; maxLat: number; maxLon: number } {
@@ -126,16 +152,39 @@ export function KioskPage() {
     vesselfinder: true,
     unknown: true,
   });
+  const [trayMmsis, setTrayMmsis] = useState<string[]>([]);
+  const [alertMmsis, setAlertMmsis] = useState<Set<string>>(() => new Set());
+  const alertMmsisRef = useRef<Set<string>>(new Set());
+  const [aishubStatus, setAishubStatus] = useState<AishubStatus | null>(null);
+  const [nowTs, setNowTs] = useState(Date.now());
+  const [categoryFilter, setCategoryFilter] = useState<Record<TrafficCategory, boolean>>({
+    club: true,
+    watch: true,
+    other: true,
+  });
+  const categoryFilterRef = useRef(categoryFilter);
+  const [watchMmsis, setWatchMmsis] = useState<Set<string>>(() => new Set());
+  const watchMmsisRef = useRef<Set<string>>(new Set());
+  const [historySpan, setHistorySpan] = useState<TrackHistorySpan | null>(null);
+  const [watchBusy, setWatchBusy] = useState(false);
   const windowStart = useMemo(() => rangeEnd - HOURS * 3600_000, [rangeEnd]);
   const scrubTs = windowStart + slider * 60_000;
 
   sourceFilterRef.current = sourceFilter;
+  categoryFilterRef.current = categoryFilter;
+  watchMmsisRef.current = watchMmsis;
   liveModeRef.current = live;
 
   const selectedVessel = useMemo(
     () => liveVessels.find((v) => v.mmsi === selectedMmsi) ?? null,
     [liveVessels, selectedMmsi],
   );
+
+  const selectedIsWatched = useMemo(() => {
+    if (!selectedMmsi) return false;
+    if (selectedVessel?.watched) return true;
+    return watchMmsis.has(selectedMmsi) || watchMmsis.has(selectedMmsi.padStart(9, "0"));
+  }, [selectedMmsi, selectedVessel, watchMmsis]);
 
   const searchMatches = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -148,20 +197,36 @@ export function KioskPage() {
       .slice(0, 8);
   }, [liveVessels, searchQuery]);
 
+  const trayCards = useMemo(() => {
+    const byMmsi = new Map(liveVessels.map((v) => [v.mmsi, v]));
+    return trayMmsis
+      .map((mmsi) => byMmsi.get(mmsi))
+      .filter((v): v is VesselLiveState => Boolean(v));
+  }, [trayMmsis, liveVessels]);
+
+  const aishubCountdownSec = useMemo(() => {
+    if (!aishubStatus?.usernameConfigured) return null;
+    const next = aishubStatus.nextAllowedCallAt;
+    if (next == null) return 0;
+    return Math.max(0, Math.ceil((next - nowTs) / 1000));
+  }, [aishubStatus, nowTs]);
+
   function makeVesselMarker(v: VesselLiveState): L.Marker {
     const registered = Boolean(v.registered);
     const color = markerColor(v);
     const size = registered ? 22 : 12;
+    const atRisk = alertMmsisRef.current.has(v.mmsi);
     const outlineClass = markerNeedsDarkOutline(color) ? " vessel-marker-dot--light" : "";
+    const riskClass = atRisk ? " vessel-marker--alert" : "";
     const icon = L.divIcon({
-      className: registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic",
+      className: (registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic") + riskClass,
       html: registered
         ? `<span class="vessel-marker-star" aria-hidden="true">★</span><span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`
         : `<span class="vessel-marker-dot${outlineClass}" style="background:${color}"></span>`,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
-    const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: registered ? 500 : 0 });
+    const marker = L.marker([v.lat, v.lon], { icon, zIndexOffset: atRisk ? 800 : registered ? 500 : 0 });
     const label = v.name ?? v.mmsi;
     const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
     const sourceBit = AIS_SOURCE_LABELS[(v.source ?? "unknown") as AisSource];
@@ -182,13 +247,21 @@ export function KioskPage() {
     const map = mapObj.current;
     if (!cluster || !clubLayer) return;
 
+    const filter = sourceFilterRef.current;
+    const visible = vessels.filter((v) => sourceAllowed(v, filter));
+    const risk = collisionRiskMmsis(visible);
+    alertMmsisRef.current = risk;
+    setAlertMmsis(risk);
+
     cluster.clearLayers();
     clubLayer.clearLayers();
 
-    const filter = sourceFilterRef.current;
     const traffic: L.Layer[] = [];
+    const catFilter = categoryFilterRef.current;
+    const watched = watchMmsisRef.current;
     for (const v of vessels) {
       if (!sourceAllowed(v, filter)) continue;
+      if (!categoryAllowed(v, catFilter, watched)) continue;
       // Club boats outside the padded view still come from the API; skip drawing them until visible.
       if (v.registered && map && !inMapBounds(v, map) && v.mmsi !== selectedMmsi) continue;
       const marker = makeVesselMarker(v);
@@ -378,7 +451,7 @@ export function KioskPage() {
   useEffect(() => {
     drawMarkers(liveVesselsRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFilter]);
+  }, [sourceFilter, categoryFilter, watchMmsis]);
 
   useEffect(() => {
     if (live) return;
@@ -555,6 +628,12 @@ export function KioskPage() {
     setTrackRangeHours(TRACK_HOURS);
     setTrackPointCount(0);
     trackFitKeyRef.current = null;
+    setTrayMmsis((prev) => {
+      const next = prev.filter((m) => m !== v.mmsi);
+      next.push(v.mmsi);
+      while (next.length > TRAY_MAX) next.shift();
+      return next;
+    });
     if (!opts?.keepSearch) setSearchQuery("");
     if (!live) {
       setLive(true);
@@ -571,6 +650,86 @@ export function KioskPage() {
     mapZoom >= TRAIL_MIN_ZOOM
       ? ` · trails ${DEFAULT_TRAIL_MINUTES}m`
       : " · trails when zoomed in";
+
+  useEffect(() => {
+    let cancelled = false;
+    const pull = () => {
+      api
+        .aishubStatus()
+        .then((s) => {
+          if (!cancelled) setAishubStatus(s);
+        })
+        .catch(() => undefined);
+      api
+        .watchlist()
+        .then((rows) => {
+          if (cancelled) return;
+          setWatchMmsis(new Set(rows.map((r) => r.mmsi)));
+        })
+        .catch(() => undefined);
+      api
+        .trackHistory()
+        .then((h) => {
+          if (!cancelled) setHistorySpan(h);
+        })
+        .catch(() => undefined);
+    };
+    pull();
+    const poll = window.setInterval(pull, 15_000);
+    const tick = window.setInterval(() => setNowTs(Date.now()), 1_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+      window.clearInterval(tick);
+    };
+  }, []);
+
+  function formatCountdown(sec: number | null): string {
+    if (sec == null) return "—";
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+  }
+
+  function formatDuration(ms: number | null | undefined): string {
+    if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
+    const mins = Math.round(ms / 60_000);
+    if (mins < 60) return `${mins}m`;
+    const hours = ms / 3_600_000;
+    if (hours < 48) return `${hours.toFixed(hours < 10 ? 1 : 0)}h`;
+    const days = hours / 24;
+    return `${days.toFixed(days < 10 ? 1 : 0)}d`;
+  }
+
+  async function toggleWatchlist() {
+    if (!selectedVessel || watchBusy) return;
+    const mmsi = selectedVessel.mmsi;
+    setWatchBusy(true);
+    try {
+      if (selectedIsWatched) {
+        await api.removeWatch(mmsi);
+        setWatchMmsis((prev) => {
+          const next = new Set(prev);
+          next.delete(mmsi);
+          next.delete(mmsi.padStart(9, "0"));
+          return next;
+        });
+      } else {
+        await api.addWatch(mmsi, selectedVessel.name ?? null);
+        setWatchMmsis((prev) => new Set(prev).add(mmsi));
+      }
+      // Refresh markers so watched styling / filters update.
+      drawMarkers(liveVesselsRef.current);
+    } catch {
+      /* ignore */
+    } finally {
+      setWatchBusy(false);
+    }
+  }
+
+  function removeTrayMmsi(mmsi: string) {
+    setTrayMmsis((prev) => prev.filter((m) => m !== mmsi));
+  }
 
   return (
     <div className="kiosk">
@@ -630,21 +789,76 @@ export function KioskPage() {
           </div>
         ))}
       </aside>
-      <aside className="source-filter" aria-label="AIS source filters">
-        <div className="source-filter-title">AIS source</div>
-        {SOURCE_FILTERS.map((item) => (
-          <label key={item.id} className="source-filter-row">
-            <input
-              type="checkbox"
-              checked={sourceFilter[item.id]}
-              onChange={() =>
-                setSourceFilter((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
-              }
-            />
-            <span>{item.label}</span>
-          </label>
-        ))}
-      </aside>
+      <div className="map-filters" aria-label="Map filters">
+        <aside className="source-filter" aria-label="AIS source filters">
+          <div className="source-filter-title">AIS source</div>
+          {SOURCE_FILTERS.map((item) => (
+            <label key={item.id} className="source-filter-row">
+              <input
+                type="checkbox"
+                checked={sourceFilter[item.id]}
+                onChange={() =>
+                  setSourceFilter((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
+                }
+              />
+              <span>{item.label}</span>
+            </label>
+          ))}
+        </aside>
+        <aside className="category-filter" aria-label="Traffic category filters">
+          <div className="source-filter-title">Show</div>
+          {TRAFFIC_CATEGORY_FILTERS.map((item) => (
+            <label key={item.id} className="source-filter-row">
+              <input
+                type="checkbox"
+                checked={categoryFilter[item.id]}
+                onChange={() =>
+                  setCategoryFilter((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
+                }
+              />
+              <span>{item.label}</span>
+            </label>
+          ))}
+        </aside>
+      </div>
+      {trayCards.length > 0 && (
+        <aside className="vessel-tray" aria-label="Selected vessels">
+          <div className="vessel-tray-title">Tracked vessels</div>
+          <div className="vessel-tray-cards">
+            {trayCards.map((v) => {
+              const nm = distanceFromHomeNm(v.lat, v.lon);
+              const area = waterwayName(v.lat, v.lon);
+              const alert = alertMmsis.has(v.mmsi);
+              return (
+                <div
+                  key={v.mmsi}
+                  className={alert ? "vessel-tray-card vessel-tray-card--alert" : "vessel-tray-card"}
+                >
+                  <button
+                    type="button"
+                    className="vessel-tray-card-main"
+                    onClick={() => focusVessel(v)}
+                  >
+                    <span className="vessel-tray-name">{v.name || v.mmsi}</span>
+                    <span className="vessel-tray-meta">
+                      {v.sog != null ? `${v.sog.toFixed(1)} kn` : "— kn"} · {formatNm(nm)} from home
+                    </span>
+                    <span className="vessel-tray-area">{area}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="vessel-tray-remove"
+                    aria-label={`Remove ${v.name || v.mmsi} from tray`}
+                    onClick={() => removeTrayMmsi(v.mmsi)}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+      )}
       <div className="vessel-search">
         <label className="vessel-search-label" htmlFor="vessel-search-input">
           Find vessel
@@ -704,6 +918,23 @@ export function KioskPage() {
               ? `Showing stored track · ${trackPointCount} point${trackPointCount === 1 ? "" : "s"}`
               : "No stored track points in this window"}
           </p>
+          {!selectedVessel.registered && (
+            <button
+              type="button"
+              className={selectedIsWatched ? "watch-toggle watch-toggle--on" : "watch-toggle"}
+              onClick={() => void toggleWatchlist()}
+              disabled={watchBusy}
+            >
+              {selectedIsWatched ? "Remove from watch list" : "Add to watch list"}
+            </button>
+          )}
+          {selectedVessel.registered && (
+            <p className="watch-toggle-note">Club vessel — tracks kept indefinitely.</p>
+          )}
+          {selectedIsWatched && !selectedVessel.registered && (
+            <p className="watch-toggle-note">Watch list — track history kept indefinitely.</p>
+          )}
+
           <dl>
             <div>
               <dt>MMSI</dt>
@@ -815,6 +1046,41 @@ export function KioskPage() {
           <span>{new Date(scrubTs).toLocaleString()}</span>
         </label>
         {aisHint && <p className="ais-hint">{aisHint}</p>}
+        <p className="ais-hint ais-hint--status">
+          {aishubStatus?.usernameConfigured ? (
+            <>
+              AISHub next refresh in <strong>{formatCountdown(aishubCountdownSec)}</strong>
+              {aishubStatus.lastRegion ? ` · last ${aishubStatus.lastRegion}` : ""}
+              {aishubStatus.lastFetched ? ` · ${aishubStatus.lastFetched} vessels` : ""}
+              {" · "}
+              {aishubStatus.outsideBboxClubCount === 0
+                ? "no club vessels tracked outside the NE bbox"
+                : `${aishubStatus.outsideBboxClubCount} club vessel${aishubStatus.outsideBboxClubCount === 1 ? "" : "s"} tracked outside the NE bbox`}
+            </>
+          ) : (
+            <>AISHub not configured (set AISHUB_USERNAME for Northeast coverage).</>
+          )}
+        </p>
+        <p className="ais-hint ais-hint--status">
+          {historySpan ? (
+            <>
+              Stored AIS history: traffic {formatDuration(historySpan.trafficSpanMs)}
+              {historySpan.trafficOldestTs
+                ? ` (back to ${new Date(historySpan.trafficOldestTs).toLocaleString()})`
+                : ""}
+              {" · "}
+              club/watch {formatDuration(historySpan.clubSpanMs)}
+              {historySpan.clubOldestTs
+                ? ` (back to ${new Date(historySpan.clubOldestTs).toLocaleString()})`
+                : " (none yet)"}
+              {" · "}
+              other-traffic retention {formatDuration(historySpan.trafficRetentionMs)} · watch list kept forever
+            </>
+          ) : (
+            <>Loading stored AIS history…</>
+          )}
+        </p>
+
         <p className="ais-hint">
           AIS refreshes every 5 seconds for the visible map area. Far overview still clusters lightly; from bay scale in, every ship is drawn.
           Short trails appear when zoomed in; click or search for a {TRACK_HOURS}-hour track and details.
