@@ -23,7 +23,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Forwarder: `deploy/ais-forwarder` with `AHYC_INGEST_URL` + `AIS_INGEST_TOKEN`
 - Railway: set matching `AIS_INGEST_TOKEN`; optional `TRAFFIC_RETENTION_HOURS`, `TRACK_MIN_INTERVAL_SEC`
 - Product rules: traffic 24h; registered MMSIs indefinite; live 10m trails when zoomed in; click/search vessel → detail pane with 24h / 7d / 30d track buttons
-- Markers color-coded by AIS ship type (sailing white, pleasure pink); club vessels are drawn in the burgee's colours (red core, white, blue outside) and fly the AHYC burgee (blue pennant, white wedge, two stars) in the legend, search results, and detail pane
+- Markers color-coded by AIS ship type (sailing white, pleasure pink); club vessels are drawn in the burgee's colours (red core, white, blue outside), and the AHYC burgee itself (blue pennant, white wedge, two stars, red letters) marks their tray cards, detail pane, and search results rather than the chart
 - Tracks are drawn with a thin dark casing under the coloured line so white sailing trails stay visible over white chart areas
 - Kiosk search: type vessel name or MMSI to zoom and inspect (scoped to vessels loaded for the current view)
 - New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known

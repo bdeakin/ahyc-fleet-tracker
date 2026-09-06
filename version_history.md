@@ -1,5 +1,9 @@
 # Version history
 
+## 0.9.7 — Burgee moves to the cards
+
+- The burgee no longer flies over club markers on the chart; the banded marker carries the identification there. It now appears on the vessel cards instead: the bottom tray card, the detail pane heading, and the search results. The legend shows the club roundel on its own, since that is what the chart actually draws.
+
 ## 0.9.6 — Club markers in club colours
 
 - Club boats are drawn in the burgee's colours banded out from the middle: a red core, white around it, blue outside, with a hairline dark edge. The stopped marker is a roundel and the moving one is the same course arrow in three nested bands, so a club boat reads as a club boat at a glance without waiting for the burgee above it to resolve. The legend swatch matches.

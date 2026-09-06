@@ -4,6 +4,8 @@
 
 The burgee identifies a club boat, but it flies above the marker and at bay-wide zoom the marker is what the eye lands on first. So the marker itself now wears the flag's colours banded out from the centre: red core, white around it, blue outside. Both marker shapes are built the same way, by drawing the shape three times and scaling each copy about its own centre — a roundel when the boat is stopped, the same course arrow in three nested bands when it is moving — which keeps the bands parallel to the outline without hand-drawing an inner chevron.
 
+Once the marker itself carried the club's colours, the flag above it was saying the same thing twice and cluttering the chart while doing it, so it came off the map. It lives on the vessel cards now — the tray card, the detail pane heading, the search results — where there is room for it to be a flag rather than a smudge, and where the eye is reading rather than scanning. The legend went back to showing only the roundel, because a legend should describe what the chart actually draws.
+
 The outer band is edged with the same near-black used to case the tracks. The first attempt edged it in white, which was a mistake: the white stroke is drawn centred on the outline, so half of it ate into the blue band and left the marker reading as mostly white. A thin dark edge keeps all three bands their full width and separates the blue from pale water. Hull colour still drives each boat's track, so two club boats on the same screen stay distinguishable even though their markers now match.
 
 ## 2026-09-06 — A hairline of black under every track
