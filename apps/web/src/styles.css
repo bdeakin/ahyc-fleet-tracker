@@ -194,6 +194,11 @@ select {
   flex-shrink: 0;
 }
 
+/* Club boats: the burgee's colours banded out from the middle, as on their markers. */
+.type-swatch--club {
+  background: radial-gradient(circle at 50% 50%, #cc0104 0 30%, #ffffff 30% 62%, #000099 62% 100%);
+}
+
 .type-swatch--light {
   border-color: #0f172a;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.45);

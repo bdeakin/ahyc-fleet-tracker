@@ -1,5 +1,9 @@
 # Version history
 
+## 0.9.6 — Club markers in club colours
+
+- Club boats are drawn in the burgee's colours banded out from the middle: a red core, white around it, blue outside, with a hairline dark edge. The stopped marker is a roundel and the moving one is the same course arrow in three nested bands, so a club boat reads as a club boat at a glance without waiting for the burgee above it to resolve. The legend swatch matches.
+
 ## 0.9.5 — Track casings
 
 - Every track on the map — live trails, the selected vessel's history, replay tracks, and noteworthy event tracks — is now drawn over a hairline of near-black, so a white sailing hull's trail stays visible where it crosses land, shoals, and the pale paper of the NOAA chart. Speed-coloured runs get one casing under the whole run rather than one per segment. Short trails were brightened from 0.55 to 0.75 opacity now that the casing, not faintness, keeps a crowded harbour readable.

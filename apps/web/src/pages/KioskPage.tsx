@@ -79,6 +79,32 @@ const TYPE_LEGEND: Array<{ color: string; label: string; burgee?: boolean }> = [
   { color: "#6b7280", label: "Other" },
 ];
 
+/** Club boats wear the burgee's colours as bands: red core, white around it, blue outside. */
+const CLUB_EDGE = "#0b1622";
+const CLUB_BANDS = [
+  { scale: 1, fill: "#000099" },
+  { scale: 0.62, fill: "#ffffff" },
+  { scale: 0.3, fill: "#cc0104" },
+];
+
+/** Nested copies of the marker shape, each scaled about its own centre, outermost first. */
+function clubShapeSvg(size: number, moving: boolean, course: number): string {
+  if (moving) {
+    const bands = CLUB_BANDS.map(({ scale, fill }, i) =>
+      i === 0
+        ? `<path d="M12 1.5 L22 28.5 L12 23.5 L2 28.5 Z" fill="${fill}" stroke="${CLUB_EDGE}" stroke-width="1.2" stroke-linejoin="round"/>`
+        : `<path d="M12 1.5 L22 28.5 L12 23.5 L2 28.5 Z" fill="${fill}" transform="translate(12 20) scale(${scale}) translate(-12 -20)"/>`,
+    ).join("");
+    return `<svg class="vessel-marker-shape vessel-marker-arrow" viewBox="0 0 24 32" width="${size}" height="${Math.round(size * 1.25)}" style="transform:rotate(${course}deg)" aria-hidden="true">${bands}</svg>`;
+  }
+  const rings = CLUB_BANDS.map(({ scale, fill }, i) =>
+    i === 0
+      ? `<circle cx="12" cy="12" r="9" fill="${fill}" stroke="${CLUB_EDGE}" stroke-width="1.4"/>`
+      : `<circle cx="12" cy="12" r="${(9 * scale).toFixed(2)}" fill="${fill}"/>`,
+  ).join("");
+  return `<svg class="vessel-marker-shape vessel-marker-circle" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${rings}</svg>`;
+}
+
 /**
  * Every track gets a hairline of near-black underneath it. A white sailing hull's trail is
  * invisible over the pale shoals and land of a paper chart without one.
@@ -485,11 +511,13 @@ export function KioskPage() {
       ? `<span class="vessel-marker-burgee" style="transform:translate(-50%,calc(-100% - ${Math.round(markerH / 2)}px))" aria-hidden="true">${burgeeSvg(22)}</span>`
       : "";
     // AIS-style shapes: circle when stopped; course arrow when moving (nose = heading/COG).
-    const shape = moving
-      ? `<svg class="vessel-marker-shape vessel-marker-arrow" viewBox="0 0 24 32" width="${size}" height="${Math.round(size * 1.25)}" style="transform:rotate(${course}deg)" aria-hidden="true">
+    const shape = registered
+      ? clubShapeSvg(size, moving, course ?? 0)
+      : moving
+        ? `<svg class="vessel-marker-shape vessel-marker-arrow" viewBox="0 0 24 32" width="${size}" height="${Math.round(size * 1.25)}" style="transform:rotate(${course}deg)" aria-hidden="true">
           <path d="M12 1.5 L22 28.5 L12 23.5 L2 28.5 Z" fill="${color}" stroke="${outlineStroke}" stroke-width="1.6" stroke-linejoin="round"/>
         </svg>`
-      : `<svg class="vessel-marker-shape vessel-marker-circle" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">
+        : `<svg class="vessel-marker-shape vessel-marker-circle" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">
           <circle cx="12" cy="12" r="9" fill="${color}" stroke="${outlineStroke}" stroke-width="2"/>
         </svg>`;
     const icon = L.divIcon({
@@ -1800,10 +1828,14 @@ export function KioskPage() {
       <aside className="type-legend" aria-label="Vessel type colors">
         {TYPE_LEGEND.map((item) => (
           <div key={item.label} className="type-legend-row">
-            <span
-              className={`type-swatch${markerNeedsDarkOutline(item.color) ? " type-swatch--light" : ""}`}
-              style={{ background: item.color }}
-            />
+            {item.burgee ? (
+              <span className="type-swatch type-swatch--club" />
+            ) : (
+              <span
+                className={`type-swatch${markerNeedsDarkOutline(item.color) ? " type-swatch--light" : ""}`}
+                style={{ background: item.color }}
+              />
+            )}
             <span>{item.label}</span>
             {item.burgee && <BurgeeGlyph height={18} />}
           </div>
