@@ -258,6 +258,10 @@ export function KioskPage() {
     const map = L.map(mapRef.current, {
       center: [AHYC_CENTER.lat, AHYC_CENTER.lon],
       zoom: 12,
+      // leaflet.markercluster requires maxZoom when disableClusteringAtZoom is set
+      // (otherwise: "Map has no maxZoom specified" → blank kiosk).
+      maxZoom: 18,
+      minZoom: 3,
       zoomControl: true,
       attributionControl: true,
     });

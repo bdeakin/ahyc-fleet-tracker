@@ -1,5 +1,11 @@
 # Version history
 
+## 0.8.5 — Fix blank kiosk (Leaflet maxZoom)
+
+- Leaflet.markercluster was throwing `Map has no maxZoom specified` because `disableClusteringAtZoom` was set without `maxZoom` on the map — leaving `#root` empty.
+- Map now sets `maxZoom: 18`; an ErrorBoundary shows a reload message instead of a blank page if render fails again.
+
+
 ## 0.8.4 — Live AIS refresh every 5s + ingest/AISStream hardening
 
 - Kiosk polls viewport AIS every **5 seconds** so local radio traffic stays current without a full page reload.

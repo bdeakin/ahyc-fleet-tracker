@@ -1,5 +1,10 @@
 # Development narrative
 
+## 2026-09-06 — Blank page after clustering deploy
+
+Production HTML and `/assets/*.js` loaded, but React left `#root` empty. Playwright caught `Map has no maxZoom specified` from leaflet.markercluster when `disableClusteringAtZoom` was used without a map `maxZoom`. Fixed by setting `maxZoom: 18` on map init and adding a small ErrorBoundary so future map failures show a message instead of a white screen. AISStream `1006` reconnects are separate (API key / upstream) and no longer hide the UI.
+
+
 ## 2026-09-06 — Blank kiosk + AISStream 1006 + slow radio ingest
 
 Railway logs showed AISStream sockets dying with code 1006 and `POST /api/ais/ingest` taking 6–8 seconds. Large radio batches were writing SQLite without a transaction and broadcasting one websocket event per vessel, which starved the server and could leave the map looking blank. Ingest is now one transaction + one notify; the kiosk refreshes live AIS every 5 seconds for harbor radio traffic; AISStream reconnect backs off instead of hammering the upstream.
