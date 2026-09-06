@@ -565,15 +565,24 @@ export {
   type NoWakeSpeedingEvent,
   type NoteworthyEvent,
   type NoteworthyFix,
+  noteworthyPlaybackTracks,
+  noteworthyPlaybackWindow,
+  positionAt,
+  type NoteworthyPlaybackTrack,
   type SuspectedGroundingEvent,
   type TrackSegmentPoint,
 } from "./noteworthyTraffic.js";
 
 export {
   HISTORICAL_CHARTS,
+  HISTORICAL_TILE_SIZE,
   boundsIntersect,
   historicalChartById,
   historicalChartsForView,
+  historicalMinNativeZoom,
+  historicalNativeZoom,
+  historicalTileUrl,
+  historicalTileZooms,
   type GeoBounds,
   type HistoricalChart,
 } from "./historicalCharts.js";

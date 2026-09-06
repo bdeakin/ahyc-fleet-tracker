@@ -11,6 +11,7 @@ import {
   ensureVesselProfileQueued,
 } from "./vesselProfiles.js";
 import { getVesselPhoto, getVesselPhotoBytes } from "./vesselPhotos.js";
+import { historicalTile } from "./historicalTiles.js";
 import { config, isMountPoint, paths } from "./config.js";
 import { availableSeasons, listAdventureOptions } from "./trips.js";
 import {
@@ -318,6 +319,23 @@ export async function registerRoutes(
       });
       reply.header("Cache-Control", "public, max-age=900");
       return photo;
+    },
+  );
+
+  app.get<{ Params: { id: string; z: string; x: string; y: string } }>(
+    "/api/historical/:id/:z/:x/:y",
+    async (req, reply) => {
+      const z = Number(req.params.z);
+      const x = Number(req.params.x);
+      const y = Number(String(req.params.y).replace(/\.webp$/i, ""));
+      if (![z, x, y].every((n) => Number.isInteger(n) && n >= 0)) {
+        return reply.code(400).send({ error: "bad_tile" });
+      }
+      const tile = await historicalTile(req.params.id, z, x, y);
+      if (!tile) return reply.code(404).send({ error: "no_tile" });
+      reply.header("Content-Type", "image/webp");
+      reply.header("Cache-Control", "public, max-age=604800, immutable");
+      return reply.send(tile);
     },
   );
 

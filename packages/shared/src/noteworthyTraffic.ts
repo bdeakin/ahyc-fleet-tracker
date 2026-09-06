@@ -949,3 +949,93 @@ export function detectSpeedRuns(fixes: NoteworthyFix[]): SpeedRunEvent[] {
   }
   return out;
 }
+
+/** One vessel's stored positions through a noteworthy event, for map playback. */
+export type NoteworthyPlaybackTrack = {
+  mmsi: string;
+  name: string | null;
+  /** "subject" is the vessel the event is about; "counterpart" is the other half of a meeting. */
+  role: "subject" | "counterpart";
+  pilot: boolean;
+  points: TrackSegmentPoint[];
+};
+
+/** The tracks an event was built from, so the kiosk can replay it. */
+export function noteworthyPlaybackTracks(event: NoteworthyEvent): NoteworthyPlaybackTrack[] {
+  if (event.kind === "interception") {
+    const pair: NoteworthyPlaybackTrack[] = [
+      {
+        mmsi: event.a.mmsi,
+        name: event.a.name,
+        role: "subject",
+        pilot: event.a.pilot,
+        points: event.a.track,
+      },
+      {
+        mmsi: event.b.mmsi,
+        name: event.b.name,
+        role: "counterpart",
+        pilot: event.b.pilot,
+        points: event.b.track,
+      },
+    ];
+    return pair.filter((t) => t.points.length > 0);
+  }
+  if (event.track.length === 0) return [];
+  return [
+    { mmsi: event.mmsi, name: event.name, role: "subject", pilot: false, points: event.track },
+  ];
+}
+
+/** Time span covered by an event's tracks, always wide enough to hold the event itself. */
+export function noteworthyPlaybackWindow(event: NoteworthyEvent): { from: number; to: number } {
+  let from = event.ts;
+  let to = event.ts;
+  for (const track of noteworthyPlaybackTracks(event)) {
+    for (const p of track.points) {
+      if (p.ts < from) from = p.ts;
+      if (p.ts > to) to = p.ts;
+    }
+  }
+  if (to <= from) to = from + 60_000;
+  return { from, to };
+}
+
+/** Where a vessel was at `ts`, interpolated between stored fixes. */
+export function positionAt(
+  points: TrackSegmentPoint[],
+  ts: number,
+): { lat: number; lon: number; sog: number | null; cog: number | null; stale: boolean } | null {
+  if (points.length === 0) return null;
+  const first = points[0]!;
+  const last = points[points.length - 1]!;
+  if (ts <= first.ts) return { ...first, stale: ts < first.ts - 1000 };
+  if (ts >= last.ts) return { ...last, stale: ts > last.ts + 1000 };
+
+  let i = 1;
+  while (i < points.length && points[i]!.ts < ts) i += 1;
+  const a = points[i - 1]!;
+  const b = points[i]!;
+  const span = b.ts - a.ts;
+  const f = span > 0 ? (ts - a.ts) / span : 0;
+  const sog = a.sog != null && b.sog != null ? a.sog + (b.sog - a.sog) * f : (a.sog ?? b.sog);
+  return {
+    lat: a.lat + (b.lat - a.lat) * f,
+    lon: a.lon + (b.lon - a.lon) * f,
+    sog,
+    // Courses wrap at 360, so take the heading of the leg being travelled.
+    cog: bearingDeg(a.lat, a.lon, b.lat, b.lon) ?? a.cog ?? b.cog,
+    stale: false,
+  };
+}
+
+function bearingDeg(lat1: number, lon1: number, lat2: number, lon2: number): number | null {
+  const toRad = Math.PI / 180;
+  const dLon = (lon2 - lon1) * toRad;
+  const y = Math.sin(dLon) * Math.cos(lat2 * toRad);
+  const x =
+    Math.cos(lat1 * toRad) * Math.sin(lat2 * toRad) -
+    Math.sin(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.cos(dLon);
+  if (x === 0 && y === 0) return null;
+  return (((Math.atan2(y, x) * 180) / Math.PI) + 360) % 360;
+}

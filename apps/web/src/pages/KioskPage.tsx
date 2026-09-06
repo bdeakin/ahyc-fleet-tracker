@@ -19,7 +19,14 @@ import {
   distanceFromHomeNm,
   formatCourseDeg,
   formatNm,
+  HISTORICAL_TILE_SIZE,
   historicalChartById,
+  historicalMinNativeZoom,
+  historicalNativeZoom,
+  historicalTileUrl,
+  noteworthyPlaybackTracks,
+  noteworthyPlaybackWindow,
+  positionAt,
   historicalChartsForView,
   markerNeedsDarkOutline,
   relativeVesselNav,
@@ -146,8 +153,12 @@ const NOTEWORTHY_KIND_ORDER: Array<NoteworthyEvent["kind"]> = [
   "nowake",
 ];
 
-function clockLabel(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function clockLabel(ts: number, withSeconds = false): string {
+  return new Date(ts).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(withSeconds ? { second: "2-digit" } : {}),
+  });
 }
 
 function noteworthyLabel(e: NoteworthyEvent): string {
@@ -172,6 +183,25 @@ function noteworthyLabel(e: NoteworthyEvent): string {
 }
 
 /** CPA range below which the pair is worth a second look at kiosk scale. */
+const HISTORICAL_UNDERLAY_PANE = "historical-underlay";
+const MOBILE_BREAKPOINT = 760;
+
+function isPhoneLayout(): boolean {
+  return typeof window !== "undefined" && window.innerWidth <= MOBILE_BREAKPOINT;
+}
+/** Whole event window replays in about this long, whatever its real duration. */
+const PLAYBACK_DURATION_MS = 14_000;
+const PLAYBACK_COLORS = ["#5ec8ff", "#f6c26b"];
+
+/** How far the playhead sits from the moment the event was logged. */
+function playbackOffsetLabel(event: NoteworthyEvent, playhead: number | null): string {
+  if (playhead == null) return "";
+  const deltaSec = Math.round((playhead - event.ts) / 1000);
+  if (Math.abs(deltaSec) < 20) return "at the event";
+  const mins = Math.abs(deltaSec) / 60;
+  const span = mins < 1 ? `${Math.abs(deltaSec)}s` : `${mins.toFixed(mins < 10 ? 1 : 0)} min`;
+  return deltaSec < 0 ? `${span} before` : `${span} after`;
+}
 const CPA_WARN_NM = 0.15;
 const CPA_WARN_TCPA_MIN = 15;
 
@@ -213,7 +243,8 @@ export function KioskPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObj = useRef<L.Map | null>(null);
   const layerRef = useRef<L.Layer | null>(null);
-  const historicalLayerRef = useRef<L.ImageOverlay | null>(null);
+  const historicalLayerRef = useRef<L.TileLayer | null>(null);
+  const playbackLayerRef = useRef<L.LayerGroup | null>(null);
   const noteworthyLayerRef = useRef<L.LayerGroup | null>(null);
   const clusterRef = useRef<L.MarkerClusterGroup | L.LayerGroup | null>(null);
   const clubLayerRef = useRef<L.LayerGroup | null>(null);
@@ -266,6 +297,14 @@ export function KioskPage() {
   const [dragMmsi, setDragMmsi] = useState<string | null>(null);
   const [dropTargetMmsi, setDropTargetMmsi] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<"layers" | "vessels" | null>(null);
+  // Status lines are useful on a kiosk screen but eat a phone screen, so start folded there.
+  const [ribbonOpen, setRibbonOpen] = useState(
+    () => typeof window === "undefined" || window.innerWidth > MOBILE_BREAKPOINT,
+  );
+  const skipPanelOpenRef = useRef(false);
+  const [playhead, setPlayhead] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (!selectedMmsi && trayStacks.length === 0) return;
@@ -651,6 +690,92 @@ export function KioskPage() {
     return () => window.clearInterval(id);
   }, []);
 
+  /*
+   * Replay: the stored fixes an event was built from are played back as moving transponders,
+   * so you can watch the approach instead of reading a static line on the chart.
+   */
+  const playbackWindow = useMemo(
+    () => (selectedNoteworthy ? noteworthyPlaybackWindow(selectedNoteworthy) : null),
+    [selectedNoteworthy],
+  );
+
+  useEffect(() => {
+    if (!playbackWindow) {
+      setPlayhead(null);
+      setPlaying(false);
+      return;
+    }
+    setPlayhead(playbackWindow.from);
+    setPlaying(true);
+  }, [playbackWindow]);
+
+  useEffect(() => {
+    if (!playing || !playbackWindow) return;
+    const span = playbackWindow.to - playbackWindow.from;
+    const rate = span / PLAYBACK_DURATION_MS;
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const advance = (now - last) * rate;
+      last = now;
+      setPlayhead((cur) => {
+        const next = (cur ?? playbackWindow.from) + advance;
+        // Hold on the last frame for a beat, then run it again.
+        return next >= playbackWindow.to ? playbackWindow.from : next;
+      });
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, playbackWindow]);
+
+  // Transponders at the scrub time, redrawn in place as the playhead moves.
+  useEffect(() => {
+    const map = mapObj.current;
+    if (!map) return;
+    const event = selectedNoteworthy;
+    if (!event || playhead == null) {
+      if (playbackLayerRef.current) {
+        map.removeLayer(playbackLayerRef.current);
+        playbackLayerRef.current = null;
+      }
+      return;
+    }
+    const group = playbackLayerRef.current ?? L.layerGroup().addTo(map);
+    playbackLayerRef.current = group;
+    group.clearLayers();
+
+    noteworthyPlaybackTracks(event).forEach((track, i) => {
+      const at = positionAt(track.points, playhead);
+      if (!at) return;
+      const color = PLAYBACK_COLORS[i % PLAYBACK_COLORS.length]!;
+      const label = track.name || track.mmsi;
+      const speed = at.sog != null ? `${at.sog.toFixed(1)} kn` : "—";
+      // Trail behind the transponder so the direction of travel reads at a glance.
+      const trail = track.points
+        .filter((p) => p.ts <= playhead)
+        .map((p) => [p.lat, p.lon] as L.LatLngExpression);
+      trail.push([at.lat, at.lon]);
+      if (trail.length > 1) {
+        L.polyline(trail, { color, weight: 3, opacity: 0.95 }).addTo(group);
+      }
+      L.marker([at.lat, at.lon], {
+        icon: L.divIcon({
+          className: `playback-marker${at.stale ? " playback-marker--stale" : ""}`,
+          html: `<svg viewBox="0 0 24 32" width="22" height="28" style="transform:rotate(${at.cog ?? 0}deg)" aria-hidden="true">
+              <path d="M12 1.5 L22 28.5 L12 23.5 L2 28.5 Z" fill="${color}" stroke="#0b1622" stroke-width="1.6" stroke-linejoin="round"/>
+            </svg><span class="playback-marker-label">${label} · ${speed}</span>`,
+          iconSize: [22, 28],
+          iconAnchor: [11, 14],
+        }),
+        interactive: false,
+        zIndexOffset: 1200,
+      }).addTo(group);
+    });
+
+    return undefined;
+  }, [selectedNoteworthy, playhead]);
+
   // Draw the selected event: both tracks, the moment it happened, and fit the view to it.
   useEffect(() => {
     const map = mapObj.current;
@@ -771,19 +896,28 @@ export function KioskPage() {
     const historical = historicalChartById(historicalChartId);
     if (historical) {
       const { south, west, north, east } = historical.bounds;
-      const overlay = L.imageOverlay(
-        historical.imageUrl,
-        [
-          [south, west],
-          [north, east],
-        ],
-        {
-          opacity: 1,
-          interactive: false,
-          attribution: historical.attribution,
-        },
-      );
-      // Neutral paper underlay so vessels stay readable where the scan has margins.
+      /*
+       * Served as tiles rather than one imageOverlay: a 20-megapixel scan scaled past about
+       * ten thousand pixels stops being painted by the browser, leaving bare paper behind.
+       */
+      const overlay = L.tileLayer(historicalTileUrl(historical.id), {
+        bounds: L.latLngBounds([south, west], [north, east]),
+        minNativeZoom: historicalMinNativeZoom(historical),
+        maxNativeZoom: historicalNativeZoom(historical),
+        maxZoom: 18,
+        tileSize: HISTORICAL_TILE_SIZE,
+        noWrap: true,
+        attribution: historical.attribution,
+      });
+      /*
+       * Neutral paper behind the sheet, in its own pane below the tile pane — as a normal
+       * overlay it would sit above the tiles and hide the chart entirely.
+       */
+      if (!map.getPane(HISTORICAL_UNDERLAY_PANE)) {
+        const pane = map.createPane(HISTORICAL_UNDERLAY_PANE);
+        pane.style.zIndex = "150";
+        pane.style.pointerEvents = "none";
+      }
       const underlay = L.rectangle(
         [
           [south, west],
@@ -794,6 +928,7 @@ export function KioskPage() {
           fillColor: "#d8c9a8",
           fillOpacity: 1,
           interactive: false,
+          pane: HISTORICAL_UNDERLAY_PANE,
         },
       );
       const group = L.layerGroup([underlay, overlay]);
@@ -990,6 +1125,19 @@ export function KioskPage() {
   }, [live, selectedMmsi, trackRangeHours, rangeEnd, vesselCount, mapZoom]);
 
   /*
+   * Tapping a ship on a phone should show its card; picking one from the search list inside
+   * the drawer should not, because the point of that tap is to look at the map.
+   */
+  useEffect(() => {
+    if (!selectedMmsi) return;
+    if (skipPanelOpenRef.current) {
+      skipPanelOpenRef.current = false;
+      return;
+    }
+    if (isPhoneLayout()) setMobilePanel("vessels");
+  }, [selectedMmsi]);
+
+  /*
    * Photo lookup runs on click only, and the server scrapes it fresh each time (nothing is
    * stored locally), so the pane shows a placeholder while the public sources are queried.
    */
@@ -1095,6 +1243,10 @@ export function KioskPage() {
       return next;
     });
     if (!opts?.keepSearch) setSearchQuery("");
+    if (isPhoneLayout()) {
+      skipPanelOpenRef.current = true;
+      setMobilePanel(null);
+    }
     if (!live) {
       setLive(true);
       setSlider(HOURS * 60);
@@ -1262,6 +1414,7 @@ export function KioskPage() {
 
 
   function renderNoteworthyDetail(event: NoteworthyEvent) {
+    const playback = playbackWindow;
     const rows: Array<[string, string]> = [];
     let title = "";
     if (event.kind === "interception") {
@@ -1324,6 +1477,43 @@ export function KioskPage() {
             <strong>{value}</strong>
           </div>
         ))}
+        {playback && (
+          <div className="noteworthy-scrub">
+            <div className="noteworthy-scrub-head">
+              <button
+                type="button"
+                className="noteworthy-scrub-play"
+                onClick={() => setPlaying((p) => !p)}
+                aria-label={playing ? "Pause replay" : "Play replay"}
+              >
+                {playing ? "❚❚" : "▶"}
+              </button>
+              <span className="noteworthy-scrub-clock">{clockLabel(playhead ?? playback.from, true)}</span>
+              <span className="noteworthy-scrub-offset">{playbackOffsetLabel(event, playhead)}</span>
+            </div>
+            <input
+              type="range"
+              className="noteworthy-scrub-range"
+              min={playback.from}
+              max={playback.to}
+              step={1000}
+              value={playhead ?? playback.from}
+              aria-label="Scrub through the event"
+              onChange={(e) => {
+                setPlaying(false);
+                setPlayhead(Number(e.target.value));
+              }}
+            />
+            <div className="noteworthy-scrub-legend">
+              {noteworthyPlaybackTracks(event).map((track, i) => (
+                <span key={track.mmsi}>
+                  <i style={{ background: PLAYBACK_COLORS[i % PLAYBACK_COLORS.length] }} />
+                  {track.name || track.mmsi}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <button type="button" className="noteworthy-clear" onClick={() => setNoteworthyId(null)}>
           Clear event
         </button>
@@ -1398,7 +1588,7 @@ export function KioskPage() {
   }
 
   return (
-    <div className="kiosk">
+    <div className={`kiosk${mobilePanel ? ` kiosk--drawer-${mobilePanel}` : ""}`}>
       <div className="kiosk-brand">
         <h1>Atlantic Highlands Yacht Club</h1>
       </div>
@@ -1431,6 +1621,40 @@ export function KioskPage() {
             Clear track{selectedLabel ? `: ${selectedLabel}` : ""}
           </button>
         )}
+      </div>
+      {/* Phone layout: the panels ride in drawers so the chart is not buried under them. */}
+      <div className="mobile-tabs">
+        <button
+          type="button"
+          className={mobilePanel === "layers" ? "mobile-tab mobile-tab--on" : "mobile-tab"}
+          aria-expanded={mobilePanel === "layers"}
+          onClick={() => setMobilePanel((cur) => (cur === "layers" ? null : "layers"))}
+        >
+          Layers
+        </button>
+        <button
+          type="button"
+          className={mobilePanel === "vessels" ? "mobile-tab mobile-tab--on" : "mobile-tab"}
+          aria-expanded={mobilePanel === "vessels"}
+          onClick={() => setMobilePanel((cur) => (cur === "vessels" ? null : "vessels"))}
+        >
+          Vessels
+        </button>
+      </div>
+      {mobilePanel && (
+        <button
+          type="button"
+          className="mobile-scrim"
+          aria-label="Close panel"
+          onClick={() => setMobilePanel(null)}
+        />
+      )}
+      <div className="drawer drawer--left">
+      <div className="drawer-head">
+        <span>Layers &amp; filters</span>
+        <button type="button" onClick={() => setMobilePanel(null)} aria-label="Close panel">
+          ×
+        </button>
       </div>
       <div className="map-layers" role="region" aria-label="Chart and event layers" ref={layersPanelRef}>
         <div className="map-layers-row">
@@ -1665,6 +1889,14 @@ export function KioskPage() {
       )}
       </div>
       </div>
+      </div>
+      <div className="drawer drawer--right">
+      <div className="drawer-head">
+        <span>Vessels</span>
+        <button type="button" onClick={() => setMobilePanel(null)} aria-label="Close panel">
+          ×
+        </button>
+      </div>
       <div className="vessel-search">
         <label className="vessel-search-label" htmlFor="vessel-search-input">
           Find vessel
@@ -1873,8 +2105,17 @@ export function KioskPage() {
           </dl>
         </aside>
       )}
+      </div>
       <div ref={mapRef} />
-      <div className="timeline" ref={timelineRef}>
+      <div className={`timeline${ribbonOpen ? "" : " timeline--collapsed"}`} ref={timelineRef}>
+        <button
+          type="button"
+          className="timeline-toggle"
+          aria-expanded={ribbonOpen}
+          onClick={() => setRibbonOpen((open) => !open)}
+        >
+          {ribbonOpen ? "Hide status" : "Status"}
+        </button>
         <label>
           <span>
             {live ? "Live" : "Replay"}

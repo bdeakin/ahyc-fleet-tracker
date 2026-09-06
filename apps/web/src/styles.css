@@ -491,6 +491,105 @@ select {
   font-weight: 600;
 }
 
+/* Replay scrubber: drag through the event and watch the transponders move. */
+.noteworthy-scrub {
+  margin-top: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(176, 141, 87, 0.22);
+}
+
+.noteworthy-scrub-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.noteworthy-scrub-play {
+  border: 1px solid rgba(176, 141, 87, 0.5);
+  background: rgba(94, 200, 255, 0.14);
+  color: inherit;
+  border-radius: 999px;
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.6rem;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.noteworthy-scrub-play:hover {
+  background: rgba(94, 200, 255, 0.25);
+}
+
+.noteworthy-scrub-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.noteworthy-scrub-offset {
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.noteworthy-scrub-range {
+  width: 100%;
+  accent-color: #5ec8ff;
+  cursor: pointer;
+}
+
+.noteworthy-scrub-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+  font-size: 0.63rem;
+  opacity: 0.85;
+}
+
+.noteworthy-scrub-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.noteworthy-scrub-legend i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+}
+
+.playback-marker {
+  background: transparent;
+  border: none;
+  overflow: visible !important;
+}
+
+.playback-marker svg {
+  display: block;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55));
+}
+
+.playback-marker--stale {
+  opacity: 0.4;
+}
+
+.playback-marker-label {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, 0.15rem);
+  white-space: nowrap;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+  background: rgba(6, 20, 30, 0.78);
+  color: #e6f2ff;
+}
+
 .noteworthy-clear {
   margin-top: 0.35rem;
   border: 1px solid rgba(176, 141, 87, 0.45);
@@ -736,42 +835,256 @@ select {
   }
 }
 
-@media (max-width: 720px) {
-  .kiosk-actions {
-    top: auto;
-    bottom: 6.8rem;
-    right: 1rem;
-    flex-direction: column;
-  }
-
-  .map-layers {
-    max-width: calc(100vw - 2rem);
-    max-height: 32vh;
-  }
-
-  .type-legend {
-    top: auto;
-    bottom: 14.5rem;
-    max-height: 9rem;
-    font-size: 0.7rem;
-  }
-
-
-
-  .vessel-search,
-  .vessel-pane {
-    right: 1rem;
-    left: auto;
-    width: min(16rem, calc(100vw - 5.5rem));
-  }
-
-  .vessel-pane {
-    top: 9.6rem;
-    max-height: 40vh;
-    overflow: auto;
-  }
+/* Drawers are inert on desktop — children keep the absolute positions they had. */
+.drawer {
+  display: contents;
 }
 
+.mobile-tabs,
+.mobile-scrim,
+.drawer-head {
+  display: none;
+}
+
+.timeline-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 0.45rem;
+  right: 0.7rem;
+  border: 1px solid rgba(176, 141, 87, 0.4);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.62rem;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.timeline-toggle:hover {
+  opacity: 1;
+}
+
+.timeline--collapsed .ais-hint {
+  display: none;
+}
+
+/* Keep the status line clear of the collapse button. */
+.timeline > label {
+  padding-right: 5.5rem;
+}
+
+@media (max-width: 760px) {
+  .kiosk-brand h1 {
+    font-size: 1.05rem;
+    letter-spacing: 0.01em;
+    max-width: 58vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .kiosk-tagline {
+    display: none;
+  }
+
+  .kiosk-actions {
+    top: 0.5rem;
+    right: 0.5rem;
+    bottom: auto;
+    flex-direction: row;
+    gap: 0.35rem;
+    font-size: 0.68rem;
+    max-width: 62vw;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .kiosk-actions button,
+  .kiosk-actions a {
+    max-width: 9.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Attribution is a full sentence of chart credits; keep it to one quiet line. */
+  .kiosk .leaflet-control-attribution {
+    font-size: 0.52rem;
+    max-width: 64vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Two edge tabs are the only chrome over the chart until something is opened. */
+  .mobile-tabs {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1400;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem calc(0.4rem + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to top, rgba(3, 14, 20, 0.92), rgba(3, 14, 20, 0));
+    pointer-events: none;
+  }
+
+  .mobile-tab {
+    pointer-events: auto;
+    flex: 1 1 0;
+    max-width: 10rem;
+    border: 1px solid rgba(176, 141, 87, 0.5);
+    background: rgba(6, 24, 32, 0.92);
+    color: inherit;
+    border-radius: 999px;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .mobile-tab--on {
+    background: rgba(94, 200, 255, 0.22);
+    border-color: rgba(94, 200, 255, 0.6);
+  }
+
+  .mobile-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1450;
+    border: 0;
+    padding: 0;
+    background: rgba(2, 10, 16, 0.45);
+  }
+
+  .drawer {
+    display: block;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 1500;
+    width: min(86vw, 20rem);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 3.2rem 0.7rem 4.8rem;
+    background: rgba(4, 17, 25, 0.96);
+    backdrop-filter: blur(12px);
+    transition: transform 0.22s ease;
+  }
+
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: -2.4rem 0 0.6rem;
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+  }
+
+  .drawer-head button {
+    border: 1px solid rgba(176, 141, 87, 0.45);
+    background: rgba(0, 0, 0, 0.25);
+    color: inherit;
+    border-radius: 999px;
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .drawer--left {
+    left: 0;
+    transform: translateX(-102%);
+    border-right: 1px solid rgba(176, 141, 87, 0.35);
+  }
+
+  .drawer--right {
+    right: 0;
+    transform: translateX(102%);
+    border-left: 1px solid rgba(176, 141, 87, 0.35);
+  }
+
+  .kiosk--drawer-layers .drawer--left,
+  .kiosk--drawer-vessels .drawer--right {
+    transform: none;
+  }
+
+  /* Inside a drawer the panels stack in flow instead of floating over the chart. */
+  .drawer .map-layers,
+  .drawer .map-filters,
+  .drawer .type-legend,
+  .drawer .source-filter,
+  .drawer .vessel-search,
+  .drawer .vessel-pane,
+  .drawer .vessel-tray-slot,
+  .drawer .vessel-tray {
+    position: static;
+    inset: auto;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    margin: 0 0 0.65rem;
+    animation: none;
+  }
+
+  .drawer .map-filters {
+    display: grid;
+    gap: 0.65rem;
+    padding: 0;
+    background: none;
+    border: none;
+    backdrop-filter: none;
+  }
+
+  .drawer .map-layers-row {
+    grid-template-columns: 1fr;
+  }
+
+  .drawer .vessel-tray-cards {
+    flex-wrap: wrap;
+    width: auto;
+  }
+
+  .drawer .vessel-pane {
+    border-radius: 0.45rem;
+  }
+
+  .drawer .noteworthy-detail {
+    max-width: none;
+  }
+
+  .timeline {
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 3.4rem;
+    padding: 0.45rem 0.6rem 0.5rem;
+    font-size: 0.72rem;
+  }
+
+  .timeline label {
+    padding-right: 4.5rem;
+  }
+
+  /* Zoom buttons and credits clear the status ribbon and the tab bar below it. */
+  .kiosk .leaflet-bottom.leaflet-right {
+    bottom: calc(var(--ribbon-h, 4rem) + 4rem);
+  }
+
+  .vessel-photo img {
+    max-height: 11rem;
+  }
+
+  .help-modal {
+    max-height: 78vh;
+  }
+}
 
 .source-filter {
   position: absolute;

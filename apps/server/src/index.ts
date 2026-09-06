@@ -12,12 +12,14 @@ import { getDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
 import { listLiveStates, pruneTrafficHistory } from "./tracks.js";
 import { startVesselProfileWorker } from "./vesselProfiles.js";
+import { startHistoricalTileWarmup } from "./historicalTiles.js";
 
 fs.mkdirSync(paths.charts, { recursive: true });
 fs.mkdirSync(path.dirname(paths.db), { recursive: true });
 getDb();
 ensurePrimaryClubVessel();
 startVesselProfileWorker(getDb);
+startHistoricalTileWarmup();
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });

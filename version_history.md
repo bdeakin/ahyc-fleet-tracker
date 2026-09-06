@@ -1,5 +1,16 @@
 # Version history
 
+## 0.9.3 — Phone layout, corrected chart georeferences
+
+- **Mobile layout**: on phones the panels now ride in two edge drawers ("Layers" and "Vessels") behind tabs at the bottom of the screen, so the chart owns the display instead of being buried. Tapping a ship opens its card; picking one from search closes the drawer and flies to it. The status ribbon folds to a single line (and can now be folded on the desktop kiosk too).
+- **Chart georeferences corrected.** The 1910, 1845, and 1895 sheets were placed by eye and landed a mile or more off — the 1845 sheet put its coastal-profile margin over the club. Each is now fitted to its own printed graticule (or, for the 1895 scan, to Sandy Hook Light and Governors Island). Pyramids are keyed to the bounding box they were cut for, so a corrected georeference re-cuts the tiles automatically.
+
+## 0.9.2 — Tiled historical charts, event replay
+
+- Historical charts are now served as map tiles (`GET /api/historical/:id/{z}/{x}/{y}.webp`) instead of one giant image. Zooming into a sheet no longer leaves blank paper: browsers stop painting a 20-megapixel scan once it is scaled past roughly ten thousand pixels, which is what the tan rectangle was.
+- Pyramids are cut once from the scans, reprojected into Web Mercator, and cached on the data volume (about 20 MB for all five sheets). They are built in the background at boot, so picking a chart is instant.
+- **Noteworthy traffic replay**: selecting an event adds a scrubber with play/pause and a time slider. Transponders move along their stored fixes with live speed labels and a trail behind them, so you can watch a pilot transfer or a speed run unfold instead of reading a static line.
+
 ## 0.9.1 — Vessel photos by MMSI
 
 - Clicking a vessel now looks up a **photo from public sources using the MMSI**: VesselFinder's ship page first, then Wikidata by IMO and Wikimedia Commons by name. The pane shows the photo with its credit and licence, and labels name-only matches as a "likely match".
