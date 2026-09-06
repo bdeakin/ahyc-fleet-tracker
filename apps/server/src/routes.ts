@@ -162,36 +162,47 @@ export async function registerRoutes(
     let accepted = 0;
     let stored = 0;
     let rejected = 0;
-    for (const raw of positions) {
-      const mmsi = String(raw.mmsi ?? "").trim();
-      const lat = Number(raw.lat);
-      const lon = Number(raw.lon);
-      if (!mmsi || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-        rejected += 1;
-        continue;
+    // One SQLite transaction per batch — without this, Pi radio batches were taking 6–8s on Railway.
+    const lives: unknown[] = [];
+    const runBatch = db.transaction((rows: typeof positions) => {
+      for (const raw of rows) {
+        const mmsi = String(raw.mmsi ?? "").trim();
+        const lat = Number(raw.lat);
+        const lon = Number(raw.lon);
+        if (!mmsi || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+          rejected += 1;
+          continue;
+        }
+        const result = ingestPosition(db, {
+          mmsi,
+          lat,
+          lon,
+          sog: raw.sog != null && Number.isFinite(Number(raw.sog)) ? Number(raw.sog) : null,
+          cog: raw.cog != null && Number.isFinite(Number(raw.cog)) ? Number(raw.cog) : null,
+          heading:
+            raw.heading != null && Number.isFinite(Number(raw.heading)) && Number(raw.heading) !== 511
+              ? Number(raw.heading)
+              : null,
+          ts: raw.ts != null && Number.isFinite(Number(raw.ts)) ? Number(raw.ts) : Date.now(),
+          name: raw.name ?? null,
+          shipType: raw.shipType != null && Number.isFinite(Number(raw.shipType)) ? Number(raw.shipType) : null,
+          source: "radio",
+        });
+        if (!result.accepted || !result.live) {
+          rejected += 1;
+          continue;
+        }
+        accepted += 1;
+        if (result.stored) stored += 1;
+        lives.push(result.live);
       }
-      const result = ingestPosition(db, {
-        mmsi,
-        lat,
-        lon,
-        sog: raw.sog != null && Number.isFinite(Number(raw.sog)) ? Number(raw.sog) : null,
-        cog: raw.cog != null && Number.isFinite(Number(raw.cog)) ? Number(raw.cog) : null,
-        heading:
-          raw.heading != null && Number.isFinite(Number(raw.heading)) && Number(raw.heading) !== 511
-            ? Number(raw.heading)
-            : null,
-        ts: raw.ts != null && Number.isFinite(Number(raw.ts)) ? Number(raw.ts) : Date.now(),
-        name: raw.name ?? null,
-        shipType: raw.shipType != null && Number.isFinite(Number(raw.shipType)) ? Number(raw.shipType) : null,
-        source: "radio",
-      });
-      if (!result.accepted || !result.live) {
-        rejected += 1;
-        continue;
-      }
-      accepted += 1;
-      if (result.stored) stored += 1;
-      broadcast({ type: "vessel", vessel: result.live });
+    });
+    runBatch(positions);
+    // Single notify after commit so the kiosk is not flooded with hundreds of WS messages.
+    if (lives.length === 1) {
+      broadcast({ type: "vessel", vessel: lives[0] });
+    } else if (lives.length > 1) {
+      broadcast({ type: "vessels", vessels: lives });
     }
     return { ok: true, accepted, stored, rejected };
   });

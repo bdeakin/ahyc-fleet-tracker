@@ -39,7 +39,7 @@ Kiosk checkboxes filter markers by source (Radio / AISHub / AISStream).
 
 - `GET /api/live?minLat&minLon&maxLat&maxLon` returns vessels in the padded viewport (club registry boats still included when outside the box for search/fly-to data).
 - Traffic markers use Leaflet.markercluster (clusters until zoom ≥ 13); AHYC club markers stay on a separate unclustered layer.
-- Short 10-minute trails load only for visible / club vessels when zoom ≥ 11 (capped), via `/api/tracks?mmsis=…`; selected vessel still gets a 24h track.
+- Kiosk refreshes viewport AIS every 5 seconds. Short 10-minute trails load only for visible / club vessels when zoom ≥ 11 (capped), via `/api/tracks?mmsis=…`; selected vessel still gets a 24h track.
 
 ## Data flow
 

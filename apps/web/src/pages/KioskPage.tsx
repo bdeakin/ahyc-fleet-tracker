@@ -82,7 +82,7 @@ export function KioskPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObj = useRef<L.Map | null>(null);
   const layerRef = useRef<L.Layer | null>(null);
-  const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
+  const clusterRef = useRef<L.MarkerClusterGroup | L.LayerGroup | null>(null);
   const clubLayerRef = useRef<L.LayerGroup | null>(null);
   const tracksRef = useRef<L.LayerGroup | null>(null);
   const liveVesselsRef = useRef<VesselLiveState[]>([]);
@@ -186,7 +186,13 @@ export function KioskPage() {
       if (v.registered) clubLayer.addLayer(marker);
       else traffic.push(marker);
     }
-    if (traffic.length) cluster.addLayers(traffic);
+    if (traffic.length) {
+      if ("addLayers" in cluster && typeof (cluster as L.MarkerClusterGroup).addLayers === "function") {
+        (cluster as L.MarkerClusterGroup).addLayers(traffic);
+      } else {
+        for (const layer of traffic) cluster.addLayer(layer);
+      }
+    }
   }
 
   function fetchViewportLive() {
@@ -247,20 +253,29 @@ export function KioskPage() {
 
   useEffect(() => {
     if (!mapRef.current || mapObj.current) return;
+    // leaflet.markercluster expects a global L when bundled via Vite ESM.
+    (window as unknown as { L: typeof L }).L = L;
     const map = L.map(mapRef.current, {
       center: [AHYC_CENTER.lat, AHYC_CENTER.lon],
       zoom: 12,
       zoomControl: true,
       attributionControl: true,
     });
-    const cluster = L.markerClusterGroup({
+    const clusterFactory = (L as unknown as { markerClusterGroup?: (opts?: object) => L.MarkerClusterGroup })
+      .markerClusterGroup;
+    const clusterOpts = {
       showCoverageOnHover: false,
       maxClusterRadius: (zoom: number) => (zoom < 8 ? 90 : zoom < 11 ? 60 : 45),
       disableClusteringAtZoom: CLUSTER_DISABLE_ZOOM,
       spiderfyOnMaxZoom: true,
       chunkedLoading: true,
       removeOutsideVisibleBounds: true,
-    });
+    };
+    const cluster: L.MarkerClusterGroup | L.LayerGroup =
+      typeof clusterFactory === "function" ? clusterFactory(clusterOpts) : L.layerGroup();
+    if (typeof clusterFactory !== "function") {
+      console.error("[kiosk] leaflet.markercluster failed to load — using plain layerGroup");
+    }
     const clubLayer = L.layerGroup();
     cluster.addTo(map);
     clubLayer.addTo(map);
@@ -328,7 +343,7 @@ export function KioskPage() {
     if (!live) return;
     const ws = liveSocket((msg) => {
       const data = msg as { type: string; vessels?: VesselLiveState[]; vessel?: VesselLiveState };
-      if (data.type === "snapshot" || data.type === "vessel") {
+      if (data.type === "snapshot" || data.type === "vessel" || data.type === "vessels") {
         scheduleViewportLive();
       }
     });
@@ -336,7 +351,7 @@ export function KioskPage() {
     const tick = window.setInterval(() => {
       if (live) setRangeEnd(Date.now());
     }, 60_000);
-    const refresh = window.setInterval(fetchViewportLive, 30_000);
+    const refresh = window.setInterval(fetchViewportLive, 5_000);
     return () => {
       ws.close();
       window.clearInterval(tick);
@@ -748,7 +763,7 @@ export function KioskPage() {
         </label>
         {aisHint && <p className="ais-hint">{aisHint}</p>}
         <p className="ais-hint">
-          AIS loads for the visible map area. Zoomed out, traffic clusters; club boats stay individual.
+          AIS refreshes every 5 seconds for the visible map area. Zoomed out, traffic clusters; club boats stay individual.
           Short trails appear when zoomed in; click or search for a {TRACK_HOURS}-hour track and details.
         </p>
         <input

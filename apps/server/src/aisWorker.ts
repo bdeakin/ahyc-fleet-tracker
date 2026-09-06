@@ -28,6 +28,8 @@ export class AisIngestWorker {
   private ws: WebSocket | null = null;
   private stopped = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectAttempt = 0;
+  private openedAt: number | null = null;
   private connected = false;
   private lastMessageAt: number | null = null;
   private lastIngestAt: number | null = null;
@@ -52,6 +54,7 @@ export class AisIngestWorker {
 
   start() {
     this.stopped = false;
+    this.reconnectAttempt = 0;
     this.connect();
   }
 
@@ -85,6 +88,19 @@ export class AisIngestWorker {
       return;
     }
 
+    // Tear down any prior socket before opening a new one (avoids 1006 reconnect storms).
+    if (this.ws) {
+      try {
+        this.ws.removeAllListeners();
+        if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+          this.ws.close();
+        }
+      } catch {
+        /* ignore */
+      }
+      this.ws = null;
+    }
+
     console.log(`[ais] Connecting with ${mmsis.length} club MMSI filter(s): ${mmsis.join(",")}`);
     const ws = new WebSocket("wss://stream.aisstream.io/v0/stream");
     this.ws = ws;
@@ -92,6 +108,8 @@ export class AisIngestWorker {
     ws.on("open", () => {
       this.connected = true;
       this.lastError = null;
+      this.reconnectAttempt = 0;
+      this.openedAt = Date.now();
       console.log("[ais] websocket open; sending subscription");
       this.sendSubscribe();
     });
@@ -120,8 +138,17 @@ export class AisIngestWorker {
     ws.on("close", (code, reason) => {
       this.connected = false;
       const why = reason?.toString() || `code ${code}`;
+      const livedMs = this.openedAt != null ? Date.now() - this.openedAt : null;
+      this.openedAt = null;
       this.lastError = `socket closed (${why})`;
-      console.warn("[ais] socket closed; reconnecting", why);
+      console.warn(
+        "[ais] socket closed; reconnecting",
+        why,
+        livedMs != null ? `lived=${livedMs}ms` : "",
+        code === 1006
+          ? "(1006 = abnormal close; often bad API key, rejected subscription, or upstream drop)"
+          : "",
+      );
       this.scheduleReconnect();
     });
 
@@ -154,7 +181,12 @@ export class AisIngestWorker {
   private scheduleReconnect() {
     if (this.stopped) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => this.connect(), 5_000);
+    // Exponential backoff: 5s, 10s, 20s… capped at 60s. Prevents tight 1006 reconnect loops.
+    const attempt = this.reconnectAttempt;
+    this.reconnectAttempt = Math.min(attempt + 1, 6);
+    const delay = Math.min(60_000, 5_000 * 2 ** attempt);
+    console.warn(`[ais] reconnect scheduled in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempt})`);
+    this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
 
   private handleMessage(msg: Record<string, unknown>) {

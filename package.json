@@ -1,7 +1,7 @@
 {
   "name": "ahyc-map-kiosk",
   "private": true,
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Atlantic Highlands Yacht Club sailing grounds map kiosk with AIS tracks and seasonal adventures",
   "workspaces": [
     "apps/*",

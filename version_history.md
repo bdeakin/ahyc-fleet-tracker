@@ -1,5 +1,12 @@
 # Version history
 
+## 0.8.4 — Live AIS refresh every 5s + ingest/AISStream hardening
+
+- Kiosk polls viewport AIS every **5 seconds** so local radio traffic stays current without a full page reload.
+- `/api/ais/ingest` runs each Pi batch in one SQLite transaction and emits a single `vessels` websocket notify (was 6–8s and flooded the UI).
+- AISStream reconnect uses exponential backoff and tears down the prior socket (reduces tight `1006` reconnect loops); logs lived-ms hint when closes are abnormal.
+
+
 ## 0.8.3 — AIS source tags, region split, viewport + clustering
 
 - Live / track rows carry `source` (`radio`, `aishub`, `aisstream`, …); kiosk can filter by Radio / AISHub / AISStream.
