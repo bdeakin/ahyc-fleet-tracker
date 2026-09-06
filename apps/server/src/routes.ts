@@ -9,7 +9,7 @@ import {
   ensureVesselProfileQueued,
 } from "./vesselProfiles.js";
 import { config } from "./config.js";
-import { availableSeasons } from "./trips.js";
+import { availableSeasons, listAdventureOptions } from "./trips.js";
 import {
   deleteVessel,
   getVessel,
@@ -49,6 +49,8 @@ export async function registerRoutes(
   app.post<{ Body: { mmsi?: string; name?: string | null; note?: string | null } }>(
     "/api/watchlist",
     async (req, reply) => {
+      const auth = await verifyAdminAuth(req.headers.authorization);
+      if (!auth.ok) return reply.code(401).send({ error: "unauthorized" });
       const mmsi = String(req.body?.mmsi ?? "").trim();
       if (!mmsi) return reply.code(400).send({ error: "mmsi_required" });
       return addToWatchlist(getDb(), mmsi, { name: req.body?.name, note: req.body?.note });
@@ -56,11 +58,19 @@ export async function registerRoutes(
   );
 
   app.delete<{ Params: { mmsi: string } }>("/api/watchlist/:mmsi", async (req, reply) => {
+    const auth = await verifyAdminAuth(req.headers.authorization);
+    if (!auth.ok) return reply.code(401).send({ error: "unauthorized" });
     const ok = removeFromWatchlist(getDb(), req.params.mmsi);
     if (!ok) return reply.code(404).send({ error: "not_found" });
     return { ok: true };
   });
 
+  /** Probe whether the presented Bearer token is a valid admin session. */
+  app.get("/api/admin/session", async (req, reply) => {
+    const auth = await verifyAdminAuth(req.headers.authorization);
+    if (!auth.ok) return reply.code(401).send({ ok: false, via: null, email: null });
+    return { ok: true, via: auth.via, email: auth.user?.email ?? null };
+  });
 
   app.get("/api/config", async () => ({
     supabase: publicSupabaseConfig(),
@@ -317,6 +327,9 @@ export async function registerRoutes(
     reply.header("Cache-Control", "public, max-age=86400");
     return reply.send(tile);
   });
+
+  /** Club boats × years with stored AIS — populates Season Adventures dropdowns. */
+  app.get("/api/adventures/options", async () => listAdventureOptions(getDb()));
 
   app.get<{ Params: { vesselId: string } }>(
     "/api/adventures/:vesselId/seasons",

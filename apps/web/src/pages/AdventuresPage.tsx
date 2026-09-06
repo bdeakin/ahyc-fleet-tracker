@@ -1,49 +1,53 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import type { AdventureNarrative, Vessel } from "@ahyc/shared";
+import type { AdventureNarrative } from "@ahyc/shared";
 import { api } from "../api";
 import { StylizedSeasonMap } from "../components/StylizedSeasonMap";
+
+type AdventureOption = { vesselId: string; vesselName: string; year: number };
+
+function optionKey(o: Pick<AdventureOption, "vesselId" | "year">): string {
+  return `${o.vesselId}:${o.year}`;
+}
 
 export function AdventuresPage() {
   const { vesselId, year } = useParams();
   const navigate = useNavigate();
-  const [vessels, setVessels] = useState<Vessel[]>([]);
-  const [seasons, setSeasons] = useState<number[]>([]);
+  const [options, setOptions] = useState<AdventureOption[]>([]);
   const [adventure, setAdventure] = useState<AdventureNarrative | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const selectedVessel = vesselId ?? vessels[0]?.id ?? "";
-  const selectedYear = year ? Number(year) : seasons[0] ?? new Date().getFullYear();
+  const selectedKey =
+    vesselId && year ? optionKey({ vesselId, year: Number(year) }) : options[0] ? optionKey(options[0]) : "";
 
   useEffect(() => {
-    api.vessels().then(setVessels).catch((e) => setError(String(e)));
-  }, []);
-
-  useEffect(() => {
-    if (!selectedVessel) return;
     api
-      .seasons(selectedVessel)
-      .then((r) => {
-        const list = r.seasons.length ? r.seasons : [new Date().getFullYear()];
-        setSeasons(list);
-        if (!year) {
-          navigate(`/adventures/${selectedVessel}/${list[0]}`, { replace: true });
+      .adventureOptions()
+      .then((list) => {
+        setOptions(list);
+        if (!vesselId || !year) {
+          const first = list[0];
+          if (first) {
+            navigate(`/adventures/${first.vesselId}/${first.year}`, { replace: true });
+          }
         }
       })
       .catch((e) => setError(String(e)));
-  }, [selectedVessel, year, navigate]);
+  }, [vesselId, year, navigate]);
 
   useEffect(() => {
-    if (!selectedVessel || !selectedYear) return;
+    if (!vesselId || !year) return;
+    const y = Number(year);
+    if (!Number.isFinite(y)) return;
     setLoading(true);
     setError(null);
     api
-      .adventure(selectedVessel, selectedYear)
+      .adventure(vesselId, y)
       .then(setAdventure)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [selectedVessel, selectedYear]);
+  }, [vesselId, year]);
 
   const stats = useMemo(() => adventure?.stats, [adventure]);
 
@@ -60,27 +64,19 @@ export function AdventuresPage() {
 
         <div className="controls">
           <label>
-            Vessel
+            Season adventures
             <select
-              value={selectedVessel}
-              onChange={(e) => navigate(`/adventures/${e.target.value}/${selectedYear}`)}
+              value={selectedKey}
+              onChange={(e) => {
+                const [id, y] = e.target.value.split(":");
+                if (id && y) navigate(`/adventures/${id}/${y}`);
+              }}
+              aria-label="Season adventures"
             >
-              {vessels.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Season
-            <select
-              value={selectedYear}
-              onChange={(e) => navigate(`/adventures/${selectedVessel}/${e.target.value}`)}
-            >
-              {(seasons.length ? seasons : [selectedYear]).map((y) => (
-                <option key={y} value={y}>
-                  {y}
+              {options.length === 0 && <option value="">No club AIS seasons yet</option>}
+              {options.map((o) => (
+                <option key={optionKey(o)} value={optionKey(o)}>
+                  {o.vesselName} - {o.year}
                 </option>
               ))}
             </select>
@@ -89,6 +85,12 @@ export function AdventuresPage() {
 
         {error && <p style={{ color: "#f0b7b7" }}>{error}</p>}
         {loading && <p>Gathering the season’s log…</p>}
+        {!loading && options.length === 0 && !error && (
+          <p style={{ opacity: 0.85 }}>
+            Register club boats in Admin and wait for AIS traffic to accumulate — seasons appear here
+            as “Vessel name - year”.
+          </p>
+        )}
 
         {adventure && (
           <>

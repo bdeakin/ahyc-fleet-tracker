@@ -41,8 +41,37 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL ?? "",
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  /**
+   * Shared secret for local admin Bearer auth when Supabase is unset.
+   * Default `dev-admin-token` is only accepted outside production (see verifyAdminAuth).
+   */
   localAdminToken: process.env.LOCAL_ADMIN_TOKEN ?? "dev-admin-token",
+  /** When true, reject the insecure default local token even in development. */
+  allowInsecureAdmin: (process.env.ALLOW_INSECURE_ADMIN ?? "") === "1",
 };
+
+/** Insecure default used only for local/dev; refused in production unless ALLOW_INSECURE_ADMIN=1. */
+export const INSECURE_LOCAL_ADMIN_TOKEN = "dev-admin-token";
+
+export function isProductionRuntime(): boolean {
+  return (
+    process.env.NODE_ENV === "production" ||
+    Boolean(process.env.RAILWAY_ENVIRONMENT) ||
+    Boolean(process.env.RAILWAY_SERVICE_NAME)
+  );
+}
+
+/** Whether a presented Bearer token may authenticate as the local admin secret. */
+export function localAdminTokenAccepted(presented: string): boolean {
+  if (!presented || presented !== config.localAdminToken) return false;
+  const insecure =
+    config.localAdminToken === INSECURE_LOCAL_ADMIN_TOKEN ||
+    presented === INSECURE_LOCAL_ADMIN_TOKEN;
+  if (!insecure) return true;
+  if (config.allowInsecureAdmin) return true;
+  if (isProductionRuntime()) return false;
+  return true;
+}
 
 export const paths = {
   db: path.join(config.dataDir, "db", "ahyc.sqlite"),

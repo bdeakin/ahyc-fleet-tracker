@@ -1,5 +1,10 @@
 # Version history
 
+## 0.8.10 — Season adventures dropdown + README/storage clarity
+
+- Season adventures is a single dropdown of `Vessel name - year` for active club boats that have stored AIS in that calendar year (`GET /api/adventures/options`), on the kiosk and `/adventures`.
+- README and architecture now state clearly that **SQLite is the vessel/track source of truth**; Supabase is optional auth/sync only.
+
 ## 0.8.9 — AIS markers, tray layout, CPA, basemap overzoom
 
 - AIS markers: stopped vessels are circles; moving vessels are course arrows (heading/COG).

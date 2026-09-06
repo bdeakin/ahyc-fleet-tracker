@@ -117,6 +117,17 @@ export type AdventureNarrative = {
   }>;
 };
 
+/** One XYZ tile URL, optionally with its own native zoom / opacity. */
+export type ChartTileUrl = {
+  url: string;
+  maxZoom?: number;
+  /** Highest zoom with real tiles; Leaflet overzooms beyond this instead of fetching blanks. */
+  maxNativeZoom?: number;
+  opacity?: number;
+  /** Leaflet `{s}` subdomain string, e.g. `"abcd"`. */
+  subdomains?: string;
+};
+
 export type ChartLayer =
   | { id: string; kind: "noaa-wms"; label: string }
   | {
@@ -124,15 +135,30 @@ export type ChartLayer =
       kind: "xyz";
       label: string;
       /** One or more XYZ tile URL templates (`{z}/{y}/{x}`). Drawn bottom→top. */
-      urls: string[];
+      urls: Array<string | ChartTileUrl>;
       attribution: string;
       maxZoom?: number;
-      /** Highest zoom with real tiles; Leaflet overzooms beyond this instead of fetching blanks. */
+      /** Default native zoom when a URL entry does not set its own. */
       maxNativeZoom?: number;
     }
   | { id: string; kind: "mbtiles"; label: string; path: string };
 
+export function chartTileUrl(entry: string | ChartTileUrl): ChartTileUrl {
+  return typeof entry === "string" ? { url: entry } : entry;
+}
+
 export const AHYC_CENTER = { lat: 40.4185, lon: -74.0385 } as const;
+
+/**
+ * Carto Voyager — sharp through harbor zoom (~z18). Clean land/water and place names
+ * without NOAA chart clutter. Pair with OpenSeaMap seamarks for buoys/lights.
+ */
+export const CARTO_VOYAGER =
+  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+
+export const CARTO_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
 
 /** Esri World Ocean Base — bathymetry shading without dense chart notation. */
 export const ESRI_OCEAN_BASE =
@@ -405,12 +431,22 @@ export function colorForShipTypeLabel(label: string | null | undefined): string 
 export {
   HOME_STATION,
   HARBOR_WATERWAYS,
+  PLACE_LANDMARKS,
   haversineNm,
   distanceFromHomeNm,
   formatNm,
+  bearingDeg,
+  bearingToCardinal,
+  describePlace,
   waterwayName,
   collisionRiskMmsis,
+  relativeVesselNav,
+  relativeBearingDeg,
+  describeRelativeBearing,
+  formatCourseDeg,
   type MotionFix,
   type CollisionRisk,
+  type PlaceDescription,
+  type RelativeVesselNav,
 } from "./harborGeo.js";
 

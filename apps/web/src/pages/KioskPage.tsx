@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
@@ -9,11 +9,16 @@ import {
   AHYC_CENTER,
   AIS_SOURCE_LABELS,
   NOAA_CHART_WMS,
+  bearingToCardinal,
+  chartTileUrl,
   collisionRiskMmsis,
   colorForShipType,
+  describeRelativeBearing,
   distanceFromHomeNm,
+  formatCourseDeg,
   formatNm,
   markerNeedsDarkOutline,
+  relativeVesselNav,
   waterwayName,
   type AisSource,
   type ChartLayer,
@@ -112,6 +117,15 @@ function inMapBounds(v: VesselLiveState, map: L.Map | null): boolean {
 }
 
 export function KioskPage() {
+  const navigate = useNavigate();
+  const [adventureOptions, setAdventureOptions] = useState<
+    Array<{ vesselId: string; vesselName: string; year: number }>
+  >([]);
+
+  useEffect(() => {
+    api.adventureOptions().then(setAdventureOptions).catch(() => setAdventureOptions([]));
+  }, []);
+
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObj = useRef<L.Map | null>(null);
   const layerRef = useRef<L.Layer | null>(null);
@@ -132,7 +146,7 @@ export function KioskPage() {
   const trackFitKeyRef = useRef<string | null>(null);
 
   const [charts, setCharts] = useState<ChartLayer[]>([]);
-  const [chartId, setChartId] = useState("ocean-simple");
+  const [chartId, setChartId] = useState("harbor-clean");
   const [live, setLive] = useState(true);
   const [rangeEnd, setRangeEnd] = useState(Date.now());
   const [slider, setSlider] = useState(HOURS * 60); // minutes from start of window
@@ -153,7 +167,20 @@ export function KioskPage() {
     vesselfinder: true,
     unknown: true,
   });
-  const [trayMmsis, setTrayMmsis] = useState<string[]>([]);
+  /** Bottom tray stacks — each stack is one or more MMSIs (drag cards together to compare). */
+  const [trayStacks, setTrayStacks] = useState<string[][]>([]);
+  const [dragMmsi, setDragMmsi] = useState<string | null>(null);
+  const [dropTargetMmsi, setDropTargetMmsi] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  useEffect(() => {
+    if (!helpOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHelpOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [helpOpen]);
+
   const trayCapacityRef = useRef(1);
   const trayMeasureRef = useRef<HTMLDivElement | null>(null);
   const [alertMmsis, setAlertMmsis] = useState<Set<string>>(() => new Set());
@@ -200,12 +227,16 @@ export function KioskPage() {
       .slice(0, 8);
   }, [liveVessels, searchQuery]);
 
-  const trayCards = useMemo(() => {
+  const trayStackCards = useMemo(() => {
     const byMmsi = new Map(liveVessels.map((v) => [v.mmsi, v]));
-    return trayMmsis
-      .map((mmsi) => byMmsi.get(mmsi))
-      .filter((v): v is VesselLiveState => Boolean(v));
-  }, [trayMmsis, liveVessels]);
+    return trayStacks
+      .map((mmsis) =>
+        mmsis
+          .map((mmsi) => byMmsi.get(mmsi))
+          .filter((v): v is VesselLiveState => Boolean(v)),
+      )
+      .filter((stack) => stack.length > 0);
+  }, [trayStacks, liveVessels]);
 
   const aishubCountdownSec = useMemo(() => {
     if (!aishubStatus?.usernameConfigured) return null;
@@ -225,7 +256,7 @@ export function KioskPage() {
         : v.cog != null && Number.isFinite(v.cog) && v.cog >= 0 && v.cog < 360
           ? v.cog
           : null;
-    const moving = sog >= 0.5 && course != null;
+    const moving = sog >= 1 && course != null;
     const size = moving ? (registered ? 28 : 22) : registered ? 18 : 12;
     const outlineStroke = markerNeedsDarkOutline(color) ? "#0f172a" : "#ffffff";
     const riskClass = atRisk ? " vessel-marker--alert" : "";
@@ -435,11 +466,15 @@ export function KioskPage() {
     const selected = charts.find((c) => c.id === chartId);
     if (selected?.kind === "xyz") {
       const group = L.layerGroup();
-      selected.urls.forEach((url, i) => {
-        L.tileLayer(url, {
-          maxZoom: selected.maxZoom ?? 18,
-          // Stretch last good tiles instead of fetching Esri's "Map data not yet available" blanks.
-          maxNativeZoom: selected.maxNativeZoom ?? selected.maxZoom ?? 18,
+      selected.urls.forEach((entry, i) => {
+        const tile = chartTileUrl(entry);
+        L.tileLayer(tile.url, {
+          maxZoom: tile.maxZoom ?? selected.maxZoom ?? 18,
+          // Per-URL native zoom: Esri Ocean caps ~z13; Carto/OpenSeaMap stay sharp at harbor zoom.
+          maxNativeZoom:
+            tile.maxNativeZoom ?? selected.maxNativeZoom ?? tile.maxZoom ?? selected.maxZoom ?? 18,
+          opacity: tile.opacity ?? 1,
+          subdomains: tile.subdomains ?? "abc",
           attribution: i === 0 ? selected.attribution : "",
         }).addTo(group);
       });
@@ -662,12 +697,20 @@ export function KioskPage() {
     setTrackRangeHours(TRACK_HOURS);
     setTrackPointCount(0);
     trackFitKeyRef.current = null;
-    setTrayMmsis((prev) => {
-      // Build left→right (oldest→newest). Drop oldest on the left when full.
-      const next = prev.filter((m) => m !== v.mmsi);
-      next.push(v.mmsi);
+    setTrayStacks((prev) => {
+      // Remove this MMSI from any existing stack, then append as its own card (newest on the right).
+      const without = prev
+        .map((stack) => stack.filter((m) => m !== v.mmsi))
+        .filter((stack) => stack.length > 0);
+      const next = [...without, [v.mmsi]];
       const cap = Math.max(0, trayCapacityRef.current);
-      while (cap > 0 && next.length > cap) next.shift();
+      let total = next.reduce((n, s) => n + s.length, 0);
+      while (cap > 0 && total > cap && next.length) {
+        const first = next[0]!;
+        first.shift();
+        if (first.length === 0) next.shift();
+        total -= 1;
+      }
       if (cap === 0) return [];
       return next;
     });
@@ -682,6 +725,8 @@ export function KioskPage() {
       map.flyTo([v.lat, v.lon], Math.max(map.getZoom(), 14), { duration: 0.85 });
     }
   }
+
+
 
   const trailsNote =
     mapZoom >= TRAIL_MIN_ZOOM
@@ -773,7 +818,18 @@ export function KioskPage() {
       const cap = Math.max(0, Math.floor(width / TRAY_CARD_SLOT_PX));
       trayCapacityRef.current = cap;
       // Window got narrower — rightmost cards fall off.
-      setTrayMmsis((prev) => (prev.length > cap ? prev.slice(0, cap) : prev));
+      setTrayStacks((prev) => {
+        let total = prev.reduce((n, s) => n + s.length, 0);
+        if (total <= cap) return prev;
+        const next = prev.map((s) => [...s]);
+        while (total > cap && next.length) {
+          const first = next[0]!;
+          first.shift();
+          if (first.length === 0) next.shift();
+          total -= 1;
+        }
+        return next;
+      });
     };
 
     applyCapacity(el.clientWidth);
@@ -786,7 +842,99 @@ export function KioskPage() {
   }, []);
 
   function removeTrayMmsi(mmsi: string) {
-    setTrayMmsis((prev) => prev.filter((m) => m !== mmsi));
+    setTrayStacks((prev) =>
+      prev
+        .map((stack) => stack.filter((m) => m !== mmsi))
+        .filter((stack) => stack.length > 0),
+    );
+  }
+
+  function unstackTray(mmsi: string) {
+    setTrayStacks((prev) => {
+      const next: string[][] = [];
+      for (const stack of prev) {
+        if (!stack.includes(mmsi) || stack.length < 2) {
+          next.push(stack);
+          continue;
+        }
+        for (const m of stack) next.push([m]);
+      }
+      return next;
+    });
+  }
+
+  function stackTrayMmsis(fromMmsi: string, ontoMmsi: string) {
+    if (!fromMmsi || !ontoMmsi || fromMmsi === ontoMmsi) return;
+    setTrayStacks((prev) => {
+      const srcIdx = prev.findIndex((s) => s.includes(fromMmsi));
+      const dstIdx = prev.findIndex((s) => s.includes(ontoMmsi));
+      if (srcIdx < 0 || dstIdx < 0) return prev;
+      if (srcIdx === dstIdx) return prev;
+      const next = prev.map((s) => [...s]);
+      const src = next[srcIdx]!;
+      const dst = next[dstIdx]!;
+      // Move the dragged MMSI onto the target stack (keep relative order of the rest).
+      next[srcIdx] = src.filter((m) => m !== fromMmsi);
+      if (!dst.includes(fromMmsi)) dst.push(fromMmsi);
+      return next.filter((s) => s.length > 0);
+    });
+  }
+
+
+  function renderRelativeNav(a: VesselLiveState, b: VesselLiveState) {
+    const nav = relativeVesselNav(
+      { lat: a.lat, lon: a.lon, sog: a.sog, cog: a.cog, heading: a.heading },
+      { lat: b.lat, lon: b.lon, sog: b.sog, cog: b.cog, heading: b.heading },
+    );
+    const nameA = a.name || a.mmsi;
+    const nameB = b.name || b.mmsi;
+    return (
+      <div className="vessel-tray-compare" aria-label={`Relative navigation ${nameA} and ${nameB}`}>
+        <div className="vessel-tray-compare-title">
+          {nameA} ↔ {nameB}
+        </div>
+        <div className="vessel-tray-compare-row">
+          <span>Distance</span>
+          <strong>{formatNm(nav.distanceNm)}</strong>
+        </div>
+        <div className="vessel-tray-compare-row">
+          <span>{nameA} → {nameB}</span>
+          <strong>
+            {formatCourseDeg(nav.bearingAbDeg)} {bearingToCardinal(nav.bearingAbDeg)}
+          </strong>
+        </div>
+        <div className="vessel-tray-compare-row">
+          <span>{nameB} → {nameA}</span>
+          <strong>
+            {formatCourseDeg(nav.bearingBaDeg)} {bearingToCardinal(nav.bearingBaDeg)}
+          </strong>
+        </div>
+        <div className="vessel-tray-compare-row">
+          <span>COG</span>
+          <strong>
+            {nameA} {formatCourseDeg(nav.cogA)}
+            {nav.sogA != null ? ` ${nav.sogA.toFixed(1)} kn` : ""} · {nameB} {formatCourseDeg(nav.cogB)}
+            {nav.sogB != null ? ` ${nav.sogB.toFixed(1)} kn` : ""}
+          </strong>
+        </div>
+        {nav.relativeFromADeg != null && (
+          <div className="vessel-tray-compare-row">
+            <span>Rel from {nameA}</span>
+            <strong>
+              {formatCourseDeg(nav.relativeFromADeg)} ({describeRelativeBearing(nav.relativeFromADeg)})
+            </strong>
+          </div>
+        )}
+        {nav.relativeFromBDeg != null && (
+          <div className="vessel-tray-compare-row">
+            <span>Rel from {nameB}</span>
+            <strong>
+              {formatCourseDeg(nav.relativeFromBDeg)} ({describeRelativeBearing(nav.relativeFromBDeg)})
+            </strong>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -796,7 +944,34 @@ export function KioskPage() {
       </div>
       <p className="kiosk-tagline">Local sailing grounds · club & harbor traffic</p>
       <div className="kiosk-actions">
-        <Link to="/adventures">Season adventures</Link>
+        <button
+          type="button"
+          className="kiosk-help-btn"
+          aria-label="Help — how to use this map"
+          title="Help"
+          onClick={() => setHelpOpen(true)}
+        >
+          ?
+        </button>
+        <label className="kiosk-adventures">
+          <span className="kiosk-adventures-label">Season adventures</span>
+          <select
+            aria-label="Season adventures"
+            value=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v) navigate(`/adventures/${v}`);
+              e.target.value = "";
+            }}
+          >
+            <option value="">Season adventures…</option>
+            {adventureOptions.map((o) => (
+              <option key={`${o.vesselId}:${o.year}`} value={`${o.vesselId}/${o.year}`}>
+                {o.vesselName} - {o.year}
+              </option>
+            ))}
+          </select>
+        </label>
         <Link to="/admin">Admin</Link>
         {!live && (
           <button
@@ -879,38 +1054,108 @@ export function KioskPage() {
             </label>
           ))}
         </aside>
-      <div className="vessel-tray-slot" ref={trayMeasureRef} aria-hidden={trayCards.length === 0}>
-        {trayCards.length > 0 && (
+      <div className="vessel-tray-slot" ref={trayMeasureRef} aria-hidden={trayStackCards.length === 0}>
+        {trayStackCards.length > 0 && (
         <aside className="vessel-tray" aria-label="Selected vessels">
+          <div className="vessel-tray-hint">Drag a card onto another to compare distance, bearing &amp; COG</div>
           <div className="vessel-tray-cards">
-            {trayCards.map((v) => {
-              const nm = distanceFromHomeNm(v.lat, v.lon);
-              const area = waterwayName(v.lat, v.lon);
-              const alert = alertMmsis.has(v.mmsi);
+            {trayStackCards.map((stack) => {
+              const primary = stack[0]!;
+              const alert = stack.some((v) => alertMmsis.has(v.mmsi));
+              const isDropTarget = dropTargetMmsi != null && stack.some((v) => v.mmsi === dropTargetMmsi);
+              const stacked = stack.length > 1;
               return (
                 <div
-                  key={v.mmsi}
-                  className={alert ? "vessel-tray-card vessel-tray-card--alert" : "vessel-tray-card"}
+                  key={stack.map((v) => v.mmsi).join("-")}
+                  className={[
+                    "vessel-tray-stack",
+                    alert ? "vessel-tray-stack--alert" : "",
+                    stacked ? "vessel-tray-stack--paired" : "",
+                    isDropTarget ? "vessel-tray-stack--drop" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDropTargetMmsi(primary.mmsi);
+                  }}
+                  onDragLeave={() => {
+                    setDropTargetMmsi((cur) => (cur === primary.mmsi ? null : cur));
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = e.dataTransfer.getData("text/mmsi") || dragMmsi;
+                    setDropTargetMmsi(null);
+                    setDragMmsi(null);
+                    if (from) stackTrayMmsis(from, primary.mmsi);
+                  }}
                 >
-                  <button
-                    type="button"
-                    className="vessel-tray-card-main"
-                    onClick={() => focusVessel(v)}
-                  >
-                    <span className="vessel-tray-name">{v.name || v.mmsi}</span>
-                    <span className="vessel-tray-meta">
-                      {v.sog != null ? `${v.sog.toFixed(1)} kn` : "— kn"} · {formatNm(nm)} from home
-                    </span>
-                    <span className="vessel-tray-area">{area}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="vessel-tray-remove"
-                    aria-label={`Remove ${v.name || v.mmsi} from tray`}
-                    onClick={() => removeTrayMmsi(v.mmsi)}
-                  >
-                    ×
-                  </button>
+                  {stack.map((v, idx) => {
+                    const nm = distanceFromHomeNm(v.lat, v.lon);
+                    const area = waterwayName(v.lat, v.lon);
+                    return (
+                      <div
+                        key={v.mmsi}
+                        className={
+                          alertMmsis.has(v.mmsi)
+                            ? "vessel-tray-card vessel-tray-card--alert"
+                            : "vessel-tray-card"
+                        }
+                        style={idx > 0 ? { marginTop: "-0.35rem" } : undefined}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/mmsi", v.mmsi);
+                          e.dataTransfer.effectAllowed = "move";
+                          setDragMmsi(v.mmsi);
+                        }}
+                        onDragEnd={() => {
+                          setDragMmsi(null);
+                          setDropTargetMmsi(null);
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="vessel-tray-card-main"
+                          onClick={() => focusVessel(v)}
+                        >
+                          <span className="vessel-tray-name">{v.name || v.mmsi}</span>
+                          <span className="vessel-tray-meta">
+                            {v.sog != null ? `${v.sog.toFixed(1)} kn` : "— kn"}
+                            {v.cog != null ? ` · COG ${formatCourseDeg(v.cog)}` : ""}
+                            {" · "}
+                            {formatNm(nm)} from home
+                          </span>
+                          <span className="vessel-tray-area">{area}</span>
+                        </button>
+                        <div className="vessel-tray-card-actions">
+                          {stacked && (
+                            <button
+                              type="button"
+                              className="vessel-tray-unstack"
+                              aria-label={`Unstack ${v.name || v.mmsi}`}
+                              title="Separate stacked cards"
+                              onClick={() => unstackTray(v.mmsi)}
+                            >
+                              ⧉
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="vessel-tray-remove"
+                            aria-label={`Remove ${v.name || v.mmsi} from tray`}
+                            onClick={() => removeTrayMmsi(v.mmsi)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {stacked &&
+                    stack.slice(1).map((other) => (
+                      <div key={`cmp-${primary.mmsi}-${other.mmsi}`}>{renderRelativeNav(primary, other)}</div>
+                    ))}
                 </div>
               );
             })}
@@ -1158,6 +1403,79 @@ export function KioskPage() {
           }}
         />
       </div>
+
+      {helpOpen && (
+        <div
+          className="help-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="kiosk-help-title"
+          onClick={() => setHelpOpen(false)}
+        >
+          <div className="help-panel" onClick={(e) => e.stopPropagation()}>
+            <header className="help-panel-header">
+              <h2 id="kiosk-help-title">How to use this map</h2>
+              <button
+                type="button"
+                className="help-panel-close"
+                aria-label="Close help"
+                onClick={() => setHelpOpen(false)}
+              >
+                ×
+              </button>
+            </header>
+            <div className="help-panel-body">
+              <section>
+                <h3>Map &amp; vessels</h3>
+                <ul>
+                  <li>Live AIS refreshes about every 5 seconds for the visible area.</li>
+                  <li>Tap a vessel (or search by name/MMSI) to select it, open details, and add a card to the tray.</li>
+                  <li>Club boats are starred; colors follow AIS ship type.</li>
+                  <li>Use the chart picker for a sharp harbor map (coast + buoys), regional ocean depths, or full NOAA charts.</li>
+                </ul>
+              </section>
+              <section>
+                <h3>Filters</h3>
+                <ul>
+                  <li>
+                    <strong>AIS source</strong> — Radio (Pi), AISHub, AISStream.
+                  </li>
+                  <li>
+                    <strong>Show</strong> — Club boats, Watch list, or all other traffic.
+                  </li>
+                </ul>
+              </section>
+              <section>
+                <h3>Watch list</h3>
+                <ul>
+                  <li>In the right-hand vessel pane, add a boat to the watch list to keep its track history indefinitely (same as club vessels).</li>
+                  <li>Other harbor traffic is only kept for the configured retention window (default 24h).</li>
+                </ul>
+              </section>
+              <section>
+                <h3>Vessel cards (bottom tray)</h3>
+                <ul>
+                  <li>Selecting vessels fills the tray (left = older, right = newer).</li>
+                  <li>
+                    <strong>Drag one card onto another</strong> to stack them. The stack shows distance between the boats, true bearings both ways, each COG/speed, and relative bearings (ahead / beam / quarter) from each vessel&apos;s heading.
+                  </li>
+                  <li>Use ⧉ to unstack, or × to remove a card.</li>
+                  <li>Red outlines mark vessels with a close CPA / collision-risk geometry.</li>
+                </ul>
+              </section>
+              <section>
+                <h3>Tracks &amp; timeline</h3>
+                <ul>
+                  <li>Selected vessel: 24h / 7d / 30d track buttons use whatever history is stored.</li>
+                  <li>The bottom ribbon shows AISHub refresh countdown, club boats tracked outside the NE box, and how far back stored AIS goes.</li>
+                  <li>Scrub the timeline to replay earlier positions.</li>
+                </ul>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -3,6 +3,8 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { ChartLayer } from "@ahyc/shared";
 import {
+  CARTO_ATTRIBUTION,
+  CARTO_VOYAGER,
   ESRI_OCEAN_ATTRIBUTION,
   ESRI_OCEAN_BASE,
   ESRI_OCEAN_MAX_NATIVE_ZOOM,
@@ -20,10 +22,36 @@ export function listChartLayers(): ChartLayer[] {
   ensureChartDir();
   const layers: ChartLayer[] = [
     {
+      id: "harbor-clean",
+      kind: "xyz",
+      label: "Harbor (sharp coast + buoys / lights)",
+      // Sharp through marina zoom; OpenSeaMap adds buoys/beacons/lights without NOAA clutter.
+      urls: [
+        {
+          url: CARTO_VOYAGER,
+          subdomains: "abcd",
+          maxNativeZoom: 20,
+          maxZoom: 20,
+        },
+        {
+          url: OPENSEAMAP_SEAMARK,
+          maxNativeZoom: 18,
+          maxZoom: 20,
+          opacity: 0.95,
+        },
+      ],
+      attribution: `${CARTO_ATTRIBUTION} | ${OPENSEAMAP_ATTRIBUTION}`,
+      maxZoom: 20,
+    },
+    {
       id: "ocean-simple",
       kind: "xyz",
-      label: "Simplified ocean (depth + place names)",
-      urls: [ESRI_OCEAN_BASE, ESRI_OCEAN_REFERENCE],
+      label: "Regional ocean (overview depths)",
+      // GEBCO-class shading — good for bay/region overview, soft past ~z13.
+      urls: [
+        { url: ESRI_OCEAN_BASE, maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM },
+        { url: ESRI_OCEAN_REFERENCE, maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM },
+      ],
       attribution: ESRI_OCEAN_ATTRIBUTION,
       maxZoom: 18,
       maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM,
@@ -31,8 +59,12 @@ export function listChartLayers(): ChartLayer[] {
     {
       id: "ocean-seamarks",
       kind: "xyz",
-      label: "Ocean + buoys / lights (OpenSeaMap)",
-      urls: [ESRI_OCEAN_BASE, ESRI_OCEAN_REFERENCE, OPENSEAMAP_SEAMARK],
+      label: "Regional ocean + buoys / lights",
+      urls: [
+        { url: ESRI_OCEAN_BASE, maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM },
+        { url: ESRI_OCEAN_REFERENCE, maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM },
+        { url: OPENSEAMAP_SEAMARK, maxNativeZoom: 18, opacity: 0.95 },
+      ],
       attribution: `${ESRI_OCEAN_ATTRIBUTION} | ${OPENSEAMAP_ATTRIBUTION}`,
       maxZoom: 18,
       maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM,
@@ -60,8 +92,8 @@ export function readMbtilesTile(
   if (!fs.existsSync(mbtilesPath)) return null;
   const db = new Database(mbtilesPath, { readonly: true, fileMustExist: true });
   try {
-    // MBTiles uses TMS y; convert from XYZ
-    const tmsY = (1 << z) - 1 - y;
+    // MBTiles store TMS y.
+    const tmsY = 2 ** z - 1 - y;
     const row = db
       .prepare("SELECT tile_data FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?")
       .get(z, x, tmsY) as { tile_data: Buffer } | undefined;

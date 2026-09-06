@@ -1,13 +1,29 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 import type { AdventureNarrative, ChartLayer, Vessel, VesselLiveState, VesselProfile, TrackPoint } from "@ahyc/shared";
 
-const adminToken = () => localStorage.getItem("ahyc_admin_token") ?? "dev-admin-token";
-const supabaseAccessToken = () => localStorage.getItem("ahyc_supabase_access_token");
+const LOCAL_ADMIN_TOKEN_KEY = "ahyc_admin_token";
+const SUPABASE_ACCESS_TOKEN_KEY = "ahyc_supabase_access_token";
 
-function authHeader(): string {
+export function getStoredLocalAdminToken(): string | null {
+  return localStorage.getItem(LOCAL_ADMIN_TOKEN_KEY);
+}
+
+export function setStoredLocalAdminToken(token: string | null) {
+  if (token) localStorage.setItem(LOCAL_ADMIN_TOKEN_KEY, token);
+  else localStorage.removeItem(LOCAL_ADMIN_TOKEN_KEY);
+}
+
+function supabaseAccessToken(): string | null {
+  return localStorage.getItem(SUPABASE_ACCESS_TOKEN_KEY);
+}
+
+/** Bearer header only when the browser has an explicit admin credential (never invent a default). */
+export function authHeader(): string | undefined {
   const supabase = supabaseAccessToken();
   if (supabase) return `Bearer ${supabase}`;
-  return `Bearer ${adminToken()}`;
+  const local = getStoredLocalAdminToken();
+  if (local) return `Bearer ${local}`;
+  return undefined;
 }
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
@@ -47,6 +63,12 @@ export type WatchedVessel = {
   note: string | null;
 };
 
+export type AdminSession = {
+  ok: boolean;
+  via: "local" | "supabase" | null;
+  email: string | null;
+};
+
 export type AishubStatus = {
   usernameConfigured: boolean;
   lastCallAt: number | null;
@@ -71,14 +93,30 @@ export const api = {
   aishubStatus: () => json<AishubStatus>("/api/aishub/status"),
   trackHistory: () => json<TrackHistorySpan>("/api/tracks/history"),
   watchlist: () => json<WatchedVessel[]>("/api/watchlist"),
-  addWatch: (mmsi: string, name?: string | null) =>
-    json<WatchedVessel>("/api/watchlist", {
+  addWatch: (mmsi: string, name?: string | null) => {
+    const auth = authHeader();
+    if (!auth) return Promise.reject(new Error("401 unauthorized"));
+    return json<WatchedVessel>("/api/watchlist", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: auth },
       body: JSON.stringify({ mmsi, name: name ?? null }),
-    }),
-  removeWatch: (mmsi: string) =>
-    json<{ ok: boolean }>(`/api/watchlist/${encodeURIComponent(mmsi)}`, { method: "DELETE" }),
+    });
+  },
+  removeWatch: (mmsi: string) => {
+    const auth = authHeader();
+    if (!auth) return Promise.reject(new Error("401 unauthorized"));
+    return json<{ ok: boolean }>(`/api/watchlist/${encodeURIComponent(mmsi)}`, {
+      method: "DELETE",
+      headers: { Authorization: auth },
+    });
+  },
+  adminSession: async (): Promise<AdminSession> => {
+    const auth = authHeader();
+    if (!auth) return { ok: false, via: null, email: null };
+    const res = await fetch("/api/admin/session", { headers: { Authorization: auth } });
+    if (!res.ok) return { ok: false, via: null, email: null };
+    return res.json() as Promise<AdminSession>;
+  },
   vessels: () => json<Vessel[]>("/api/vessels"),
   live: (bbox?: { minLat: number; minLon: number; maxLat: number; maxLon: number }) => {
     if (!bbox) return json<VesselLiveState[]>("/api/live");
@@ -92,11 +130,14 @@ export const api = {
   },
   vesselProfile: (mmsi: string) => json<VesselProfile>(`/api/vessels/profile/${mmsi}`),
   charts: () => json<ChartLayer[]>("/api/charts"),
-  syncVessels: () =>
-    json<{ synced: number; configured: boolean }>("/api/sync/vessels", {
+  syncVessels: () => {
+    const auth = authHeader();
+    if (!auth) return Promise.reject(new Error("401 unauthorized"));
+    return json<{ synced: number; configured: boolean }>("/api/sync/vessels", {
       method: "POST",
-      headers: { Authorization: authHeader() },
-    }),
+      headers: { Authorization: auth },
+    });
+  },
   tracks: (from: number, to: number, mmsi?: string, mmsis?: string[]) => {
     const q = new URLSearchParams({ from: String(from), to: String(to) });
     if (mmsi) q.set("mmsi", mmsi);
@@ -106,22 +147,31 @@ export const api = {
   replay: (at: number) => json<VesselLiveState[]>(`/api/tracks/replay?at=${at}`),
   seasons: (vesselId: string) =>
     json<{ vesselId: string; seasons: number[] }>(`/api/adventures/${vesselId}/seasons`),
+  /** Active club vessels with years that have stored AIS traffic. */
+  adventureOptions: () =>
+    json<Array<{ vesselId: string; vesselName: string; year: number }>>("/api/adventures/options"),
   adventure: (vesselId: string, year: number) =>
     json<AdventureNarrative>(`/api/adventures/${vesselId}/${year}`),
-  saveVessel: (body: Partial<Vessel> & { name: string; mmsi: string }, id?: string) =>
-    json<Vessel>(id ? `/api/vessels/${id}` : "/api/vessels", {
+  saveVessel: (body: Partial<Vessel> & { name: string; mmsi: string }, id?: string) => {
+    const auth = authHeader();
+    if (!auth) return Promise.reject(new Error("401 unauthorized"));
+    return json<Vessel>(id ? `/api/vessels/${id}` : "/api/vessels", {
       method: id ? "PUT" : "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: authHeader(),
+        Authorization: auth,
       },
       body: JSON.stringify(body),
-    }),
-  deleteVessel: (id: string) =>
-    json<{ ok: boolean }>(`/api/vessels/${id}`, {
+    });
+  },
+  deleteVessel: (id: string) => {
+    const auth = authHeader();
+    if (!auth) return Promise.reject(new Error("401 unauthorized"));
+    return json<{ ok: boolean }>(`/api/vessels/${id}`, {
       method: "DELETE",
-      headers: { Authorization: authHeader() },
-    }),
+      headers: { Authorization: auth },
+    });
+  },
 };
 
 export function liveSocket(onMessage: (data: unknown) => void): WebSocket {
@@ -148,8 +198,8 @@ export function getBrowserSupabase(url: string, anonKey: string): SupabaseClient
 
 export function persistSupabaseSession(session: Session | null) {
   if (session?.access_token) {
-    localStorage.setItem("ahyc_supabase_access_token", session.access_token);
+    localStorage.setItem(SUPABASE_ACCESS_TOKEN_KEY, session.access_token);
   } else {
-    localStorage.removeItem("ahyc_supabase_access_token");
+    localStorage.removeItem(SUPABASE_ACCESS_TOKEN_KEY);
   }
 }

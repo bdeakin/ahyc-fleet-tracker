@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import type { Vessel } from "@ahyc/shared";
-import { config } from "./config.js";
+import { config, localAdminTokenAccepted } from "./config.js";
 import { getDb } from "./db.js";
 import { upsertVessel, listVessels, deleteVessel } from "./vessels.js";
 
@@ -119,7 +119,7 @@ export async function verifyAdminAuth(authorization: string | undefined): Promis
   const token = authorization.replace(/^Bearer\s+/i, "");
   if (!token) return { ok: false, via: null };
 
-  if (token === config.localAdminToken) {
+  if (localAdminTokenAccepted(token)) {
     return { ok: true, via: "local" };
   }
 

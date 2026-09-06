@@ -1,5 +1,13 @@
 # Development narrative
 
+## 2026-09-06 — Drag cards to compare + in-app help
+
+Operators wanted a quick way to reason about two contacts without leaving the kiosk. Tray cards are now draggable: drop one on another to stack them and read distance, mutual true bearings, each COG, and relative bearings in the own-ship frame (ahead / beam / quarter). A **?** control opens a short help panel covering filters, watch list, stacking, and track tools.
+
+## 2026-09-06 — Season adventures dropdown + SQLite-first docs
+
+Season adventures should not require hunting for a vessel and then a year. The kiosk and adventures page now share one dropdown fed by club registry boats crossed with calendar years that already have AIS points in SQLite (`Vessel name - year`). README/architecture were updated so operators are not steered into thinking Supabase is the registry — local SQLite always is; Supabase remains an optional login/sync layer.
+
 ## 2026-09-06 — AIS shapes, tray along the ribbon, tighter CPA
 
 Markers now read like other AIS apps: circles when stopped, heading arrows when moving, with a pulsing red ring for CPA risk. Alerts fire when tracks pass within 0.1 nm in the next 12 minutes — including a mover closing on a stopped boat, but never two stopped vessels.

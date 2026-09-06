@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { seasonBounds, type TripSummary, type Vessel } from "@ahyc/shared";
 import { config } from "./config.js";
 import type { Db } from "./db.js";
+import { listVessels } from "./vessels.js";
 import { haversineNm, seasonYearForTs } from "./geo.js";
 
 type Point = { lat: number; lon: number; ts: number; sog: number | null };
@@ -151,18 +152,45 @@ export function availableSeasons(db: Db, vesselId: string): number[] {
     | { mmsi: string }
     | undefined;
   if (!vessel) return [];
+  // Calendar years that have any stored AIS fixes for this MMSI.
   const rows = db
-    .prepare("SELECT DISTINCT ts FROM track_points WHERE mmsi = ?")
-    .all(vessel.mmsi) as Array<{ ts: number }>;
+    .prepare(
+      `SELECT DISTINCT CAST(strftime('%Y', ts / 1000, 'unixepoch') AS INTEGER) AS year
+       FROM track_points WHERE mmsi = ? ORDER BY year DESC`,
+    )
+    .all(vessel.mmsi) as Array<{ year: number }>;
   const years = new Set<number>();
-  for (const { ts } of rows) {
-    const y = seasonYearForTs(ts, config.seasonStart, config.seasonEnd);
-    if (y != null) years.add(y);
+  for (const { year } of rows) {
+    if (Number.isFinite(year)) years.add(year);
   }
-  // Also include years that already have trip rows
   const tripYears = db
-    .prepare("SELECT DISTINCT season_year as y FROM trips WHERE vessel_id = ?")
+    .prepare("SELECT DISTINCT season_year AS y FROM trips WHERE vessel_id = ?")
     .all(vesselId) as Array<{ y: number }>;
   for (const { y } of tripYears) years.add(y);
   return [...years].sort((a, b) => b - a);
+}
+
+export type AdventureOption = {
+  vesselId: string;
+  vesselName: string;
+  year: number;
+};
+
+/** Active club vessels × years that have stored AIS traffic (for Season Adventures dropdown). */
+export function listAdventureOptions(db: Db): AdventureOption[] {
+  const vessels = listVessels(db, true);
+  const yearStmt = db.prepare(
+    `SELECT DISTINCT CAST(strftime('%Y', ts / 1000, 'unixepoch') AS INTEGER) AS year
+     FROM track_points WHERE mmsi = ? ORDER BY year DESC`,
+  );
+  const out: AdventureOption[] = [];
+  for (const v of vessels) {
+    const years = yearStmt.all(v.mmsi) as Array<{ year: number }>;
+    for (const { year } of years) {
+      if (!Number.isFinite(year)) continue;
+      out.push({ vesselId: v.id, vesselName: v.name, year });
+    }
+  }
+  out.sort((a, b) => b.year - a.year || a.vesselName.localeCompare(b.vesselName));
+  return out;
 }
