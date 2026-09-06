@@ -1,5 +1,10 @@
 # Version history
 
+## 0.8.13 — Durable Railway volume path + storage health
+
+- Prefer `RAILWAY_VOLUME_MOUNT_PATH` for SQLite so redeploys keep track history when a volume is attached.
+- `/api/health` reports `dataDir`, mount detection, and `durableStorage` so operators can verify persistence.
+
 ## 0.8.12 — Carto Voyager API key for harbor basemap
 
 - Harbor chart layer uses `CARTO_API_KEY` when set: `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=…`.

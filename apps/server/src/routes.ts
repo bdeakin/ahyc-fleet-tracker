@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { buildAdventure } from "./narrative.js";
 import { listChartLayers, readMbtilesTile } from "./charts.js";
@@ -8,7 +9,7 @@ import {
   scrapeAndStoreProfile,
   ensureVesselProfileQueued,
 } from "./vesselProfiles.js";
-import { config } from "./config.js";
+import { config, isMountPoint, paths } from "./config.js";
 import { availableSeasons, listAdventureOptions } from "./trips.js";
 import {
   deleteVessel,
@@ -37,7 +38,25 @@ export async function registerRoutes(
   broadcast: (payload: unknown) => void,
   aishub: AishubWorker,
 ) {
-  app.get("/api/health", async () => ({ ok: true }));
+  app.get("/api/health", async () => {
+    const span = trackHistorySpan(getDb());
+    const mounted = isMountPoint(config.dataDir);
+    const railwayMount = process.env.RAILWAY_VOLUME_MOUNT_PATH ?? null;
+    const onRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_NAME);
+    return {
+      ok: true,
+      dataDir: config.dataDir,
+      dbPath: paths.db,
+      dbExists: fs.existsSync(paths.db),
+      dataDirIsMount: mounted,
+      railwayVolumeMountPath: railwayMount,
+      /** False when SQLite is on the ephemeral container FS and will vanish on redeploy. */
+      durableStorage: !onRailway || mounted || (railwayMount != null && config.dataDir === railwayMount),
+      trafficSpanMs: span.trafficSpanMs,
+      pointCount: span.pointCount,
+      trafficRetentionMs: span.trafficRetentionMs,
+    };
+  });
 
   app.get("/api/ais/status", async () => ais.getStatus());
 

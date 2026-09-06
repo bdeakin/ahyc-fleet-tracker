@@ -10,7 +10,7 @@
 
 ## Deployment targets
 
-- **Railway (phone-friendly):** always-on Node service, volume at `/data` for SQLite, chart tiles over the network. See `deploy/CLOUD.md`.
+- **Railway (phone-friendly):** always-on Node service with a volume mounted at `/data` for SQLite (redeploy-safe when `DATA_DIR` / `RAILWAY_VOLUME_MOUNT_PATH` points at that mount). Chart tiles over the network. See `deploy/CLOUD.md`. `/api/health` reports `durableStorage`.
 - **Raspberry Pi kiosk:** same app + Chromium `--kiosk`. See `deploy/README.md`.
 
 ## AIS sources

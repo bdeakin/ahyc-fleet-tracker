@@ -26,11 +26,19 @@ You do **not** need Supabase to go live. You **do** need a free [AISStream.io](h
 3. Select **`bdeakin/ahyc-fleet-tracker`** (use `main` after merge, or the PR branch while testing).
 4. Railway builds with the root `Dockerfile` (`railway.toml`).
 
-### 3. Persistent volume
+### 3. Persistent volume (required for track history)
 
-1. Open the service → **Settings** (or **Volumes**).
-2. Add a volume mounted at **`/data`**.
-3. This keeps SQLite tracks across redeploys.
+Railway volumes **do** survive redeploys. Tracks only vanish when SQLite is writing to the ephemeral container disk instead of the volume.
+
+1. Open the service → click the volume (or **Settings → Volumes**).
+2. Set the volume **mount path** to exactly **`/data`** (must match where the app stores the DB).
+3. In **Variables**, set `DATA_DIR=/data` (optional if the volume mount is `/data` — the app also follows `RAILWAY_VOLUME_MOUNT_PATH`).
+4. Redeploy once after attaching/changing the volume.
+
+After deploy, open `/api/health` and confirm:
+- `durableStorage: true`
+- `dataDir` / `railwayVolumeMountPath` are `/data` (or your mount path)
+- `dataDirIsMount: true`
 
 ### 4. Environment variables
 
@@ -68,8 +76,8 @@ Only if you want email login or a cloud-backed vessel list:
 
 - **No vessels on the map:** confirm `AISSTREAM_API_KEY` is set and the vessel MMSI is registered/active in `/admin`.
 - **Admin 401:** token in the admin UI must match `LOCAL_ADMIN_TOKEN`.
-- **Tracks disappear after redeploy:** volume is not mounted at `/data`, or `DATA_DIR` is wrong.
-- **Health check:** `GET /api/health` should return `{"ok":true}`.
+- **Tracks disappear after redeploy:** the volume must be mounted at `/data` and the app must use that path (`DATA_DIR=/data`). Check `/api/health` → `durableStorage` should be `true`. A volume that exists in the project but is not mounted (or is mounted at a different path) does **not** persist SQLite.
+- **Health check:** `GET /api/health` returns storage diagnostics (`dataDir`, `durableStorage`, `trafficSpanMs`, …).
 
 ## Clubhouse kiosk (Pi)
 

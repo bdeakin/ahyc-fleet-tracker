@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
@@ -12,11 +13,51 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Resolve where SQLite lives.
+ *
+ * Railway volumes survive redeploys, but only if the app writes to the mount path.
+ * Preference order:
+ * 1. `RAILWAY_VOLUME_MOUNT_PATH` (set automatically when a volume is attached) — wins so a
+ *    Dockerfile `DATA_DIR=/data` default cannot accidentally bypass a differently mounted volume
+ * 2. Explicit `DATA_DIR`
+ * 3. `/data` on Railway when that directory exists
+ * 4. Local `./data`
+ */
+export function resolveDataDir(): string {
+  const railwayMount = process.env.RAILWAY_VOLUME_MOUNT_PATH?.trim();
+  if (railwayMount) {
+    return path.isAbsolute(railwayMount) ? railwayMount : path.resolve(root, railwayMount);
+  }
+  const explicit = process.env.DATA_DIR?.trim();
+  if (explicit) {
+    return path.isAbsolute(explicit) ? explicit : path.resolve(root, explicit);
+  }
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_NAME) {
+    if (fs.existsSync("/data")) return "/data";
+  }
+  return path.resolve(root, "./data");
+}
+
+/** True when `dir` appears as a mount point in /proc/mounts (Linux / Railway). */
+export function isMountPoint(dir: string): boolean {
+  try {
+    const mounts = fs.readFileSync("/proc/mounts", "utf8");
+    const normalized = path.resolve(dir);
+    return mounts.split("\n").some((line) => {
+      const parts = line.split(" ");
+      return parts[1] === normalized;
+    });
+  } catch {
+    return false;
+  }
+}
+
 export const config = {
   root,
   port: num("PORT", 8787),
   host: process.env.HOST ?? "0.0.0.0",
-  dataDir: path.resolve(root, process.env.DATA_DIR ?? "./data"),
+  dataDir: resolveDataDir(),
   aisstreamApiKey: process.env.AISSTREAM_API_KEY ?? "",
   /** Carto Basemaps API key for Voyager tiles (Railway: CARTO_API_KEY). */
   cartoApiKey: process.env.CARTO_API_KEY ?? "",

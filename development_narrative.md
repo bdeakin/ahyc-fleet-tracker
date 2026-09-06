@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-09-06 — Make Railway track storage survive redeploys
+
+Production only had ~30 minutes of AIS history after a redeploy even though a Railway volume existed. Volumes are durable; the wipe happens when SQLite writes to the container filesystem instead of the mount. The server now prefers `RAILWAY_VOLUME_MOUNT_PATH`, logs a warning when storage is ephemeral, and exposes `durableStorage` on `/api/health`.
+
 ## 2026-09-06 — Carto API key for harbor Voyager tiles
 
 Carto’s public Voyager CDN is fine for light local use but production needs an authenticated basemap URL. The harbor layer now reads `CARTO_API_KEY` and serves `…/voyager/{z}/{x}/{y}.png?key=…` (no subdomain host) when set; otherwise it keeps the public `{s}.basemaps.cartocdn.com` template.

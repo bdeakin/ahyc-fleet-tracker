@@ -7,7 +7,7 @@ import fastifyStatic from "@fastify/static";
 import { AisIngestWorker } from "./aisWorker.js";
 import { AishubWorker } from "./aishubWorker.js";
 import { ensurePrimaryClubVessel } from "./bootstrap.js";
-import { config, paths } from "./config.js";
+import { config, isMountPoint, paths } from "./config.js";
 import { getDb } from "./db.js";
 import { registerRoutes } from "./routes.js";
 import { listLiveStates, pruneTrafficHistory } from "./tracks.js";
@@ -64,6 +64,23 @@ if (fs.existsSync(webDist)) {
 
 await app.listen({ port: config.port, host: config.host });
 console.log(`[ahyc] listening on http://${config.host}:${config.port}`);
+{
+  const mounted = isMountPoint(config.dataDir);
+  const railwayMount = process.env.RAILWAY_VOLUME_MOUNT_PATH ?? null;
+  console.log(
+    `[ahyc] dataDir=${config.dataDir} db=${paths.db} mount=${mounted} railwayVolume=${railwayMount ?? "none"}`,
+  );
+  if (
+    (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_NAME) &&
+    !mounted &&
+    config.dataDir !== railwayMount
+  ) {
+    console.warn(
+      "[ahyc] WARNING: SQLite is not on a Railway volume mount — track history will be wiped on redeploy. " +
+        "Attach a volume with mount path /data and set DATA_DIR=/data (or rely on RAILWAY_VOLUME_MOUNT_PATH).",
+    );
+  }
+}
 ais.start();
 aishub.start();
 

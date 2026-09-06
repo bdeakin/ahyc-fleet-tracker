@@ -6,6 +6,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 
 ## Constraints
 
+- Railway volume at `/data` + `DATA_DIR=/data` (or `RAILWAY_VOLUME_MOUNT_PATH`) so SQLite tracks survive redeploys; `/api/health` reports `durableStorage`
 - Prefer local responsiveness (MBTiles + SQLite on Pi)
 - AIS via AISStream API, not website scraping
 - Season ≈ April–October; any vessel × any season with data
