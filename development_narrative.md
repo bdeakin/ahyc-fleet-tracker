@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-09-06 — Live last-report age on vessel cards
+
+A static “Updated” clock on the detail pane was hard to read at a glance on the kiosk. It is now a **Last report** field that counts up every second from the vessel’s latest AIS timestamp (tray cards show the same age). Absolute time remains available on hover.
+
 ## 2026-09-06 — Drag cards to compare + in-app help
 
 Operators wanted a quick way to reason about two contacts without leaving the kiosk. Tray cards are now draggable: drop one on another to stack them and read distance, mutual true bearings, each COG, and relative bearings in the own-ship frame (ahead / beam / quarter). A **?** control opens a short help panel covering filters, watch list, stacking, and track tools.

@@ -116,6 +116,21 @@ function inMapBounds(v: VesselLiveState, map: L.Map | null): boolean {
   return map.getBounds().pad(VIEWPORT_PAD).contains([v.lat, v.lon]);
 }
 
+/** Live age since the vessel's last AIS / track timestamp (ticks with `nowMs`). */
+function formatElapsedSince(ts: number, nowMs: number): string {
+  if (!Number.isFinite(ts) || ts <= 0) return "—";
+  const sec = Math.max(0, Math.floor((nowMs - ts) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return `${m}m ${String(s).padStart(2, "0")}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  if (h < 48) return `${h}h ${rm}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
 export function KioskPage() {
   const navigate = useNavigate();
   const [adventureOptions, setAdventureOptions] = useState<
@@ -172,6 +187,13 @@ export function KioskPage() {
   const [dragMmsi, setDragMmsi] = useState<string | null>(null);
   const [dropTargetMmsi, setDropTargetMmsi] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!selectedMmsi && trayStacks.length === 0) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [selectedMmsi, trayStacks.length]);
   useEffect(() => {
     if (!helpOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1126,6 +1148,12 @@ export function KioskPage() {
                             {" · "}
                             {formatNm(nm)} from home
                           </span>
+                          <span
+                            className="vessel-tray-age"
+                            title={new Date(v.ts).toLocaleString()}
+                          >
+                            Last report {formatElapsedSince(v.ts, nowMs)}
+                          </span>
                           <span className="vessel-tray-area">{area}</span>
                         </button>
                         <div className="vessel-tray-card-actions">
@@ -1268,8 +1296,14 @@ export function KioskPage() {
               </dd>
             </div>
             <div>
-              <dt>Updated</dt>
-              <dd>{new Date(selectedVessel.ts).toLocaleString()}</dd>
+              <dt>Last report</dt>
+              <dd
+                className="vessel-age"
+                title={new Date(selectedVessel.ts).toLocaleString()}
+                aria-live="polite"
+              >
+                {formatElapsedSince(selectedVessel.ts, nowMs)}
+              </dd>
             </div>
             <div>
               <dt>Track</dt>
@@ -1430,6 +1464,9 @@ export function KioskPage() {
                 <ul>
                   <li>Live AIS refreshes about every 5 seconds for the visible area.</li>
                   <li>Tap a vessel (or search by name/MMSI) to select it, open details, and add a card to the tray.</li>
+                  <li>
+                    <strong>Last report</strong> on the detail pane (and tray cards) is a live counter of time since the latest AIS point for that vessel.
+                  </li>
                   <li>Club boats are starred; colors follow AIS ship type.</li>
                   <li>Use the chart picker for a sharp harbor map (coast + buoys), regional ocean depths, or full NOAA charts.</li>
                 </ul>

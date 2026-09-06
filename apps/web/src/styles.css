@@ -858,9 +858,20 @@ select {
 }
 
 .vessel-tray-meta,
-.vessel-tray-area {
+.vessel-tray-area,
+.vessel-tray-age {
   font-size: 0.68rem;
   opacity: 0.8;
+}
+
+.vessel-tray-age {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+}
+
+.vessel-age {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .vessel-tray-remove {

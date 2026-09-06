@@ -1,5 +1,10 @@
 # Version history
 
+## 0.8.11 — Last-report age counter on vessel cards
+
+- Vessel detail pane replaces the static **Updated** timestamp with a live **Last report** up-counter (time since the latest AIS point).
+- Tray cards show the same live age; hover still reveals the absolute timestamp.
+
 ## 0.8.10 — Season adventures dropdown + README/storage clarity
 
 - Season adventures is a single dropdown of `Vessel name - year` for active club boats that have stored AIS in that calendar year (`GET /api/adventures/options`), on the kiosk and `/adventures`.
