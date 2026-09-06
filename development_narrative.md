@@ -1,5 +1,9 @@
 # Development narrative
 
+## 2026-09-06 — Historical charts on the kiosk
+
+Operators can switch the basemap to period charts when the viewport intersects coverage. A **Historical chart** control offers Robert Dudley’s **1646** eastern-seaboard general chart (regional zoom), plus **1776** Entrance of Hudson’s River and **1845 / 1895 / 1910** NY Bay sheets. Selecting one swaps modern tiles for a georeferenced image overlay; assets live under `/historical-charts/`.
+
 ## 2026-09-06 — Make Railway track storage survive redeploys
 
 Production only had ~30 minutes of AIS history after a redeploy even though a Railway volume existed. Volumes are durable; the wipe happens when SQLite writes to the container filesystem instead of the mount. The server now prefers `RAILWAY_VOLUME_MOUNT_PATH`, logs a warning when storage is ephemeral, and exposes `durableStorage` on `/api/health`.

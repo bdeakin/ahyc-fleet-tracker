@@ -27,6 +27,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - Kiosk search: type vessel name or MMSI to zoom and inspect (scoped to vessels loaded for the current view)
 - New MMSI → one-time public profile scrape (cached in SQLite); pane shows flag / class / size when known
 - Default basemap: Carto Voyager harbor layer (`CARTO_API_KEY` → keyed tiles) + OpenSeaMap seamarks; Esri Ocean for regional overview; NOAA WMS optional
+- When the view covers a charted area, a **Historical chart** dropdown offers Dudley 1646 (eastern seaboard at regional zoom) and 1776 / 1845 / 1895 / 1910 harbor sheets that replace the modern basemap
 - Live AIS is viewport-scoped and refreshes every 5 seconds; map sets maxZoom for marker clustering; traffic only clusters at far overview (individual ships from bay/harbor scale); filter markers by source (Radio / AISHub / AISStream) and by category (Club boats / Watch list / All other traffic)
 - Click a vessel → right pane can **Add to watch list**; drag tray cards onto each other to compare distance / bearing / COG; **?** opens in-app help
 - Detail pane **Last report** (and tray cards) show a live up-counter of time since that vessel’s latest AIS point

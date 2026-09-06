@@ -387,6 +387,49 @@ select {
   min-width: 14rem;
 }
 
+.historical-chart-select {
+  position: absolute;
+  z-index: 1000;
+  left: 1rem;
+  bottom: 8.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  background: var(--panel);
+  border: 1px solid rgba(176, 141, 87, 0.45);
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.55rem 0.45rem;
+  backdrop-filter: blur(8px);
+  animation: historical-chart-in 220ms ease-out;
+}
+
+.historical-chart-select label {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.historical-chart-select select {
+  background: transparent;
+  color: var(--foam);
+  border: none;
+  outline: none;
+  min-width: 15rem;
+  font-weight: 600;
+}
+
+@keyframes historical-chart-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .vessel-marker {
   width: 0;
   height: 0;
@@ -631,6 +674,11 @@ select {
 
   .chart-select {
     bottom: 10.5rem;
+  }
+
+  .historical-chart-select {
+    bottom: 13.4rem;
+    left: 1rem;
   }
 
   .type-legend {

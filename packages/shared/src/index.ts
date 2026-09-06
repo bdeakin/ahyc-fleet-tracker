@@ -462,3 +462,12 @@ export {
   type RelativeVesselNav,
 } from "./harborGeo.js";
 
+export {
+  HISTORICAL_CHARTS,
+  boundsIntersect,
+  historicalChartById,
+  historicalChartsForView,
+  type GeoBounds,
+  type HistoricalChart,
+} from "./historicalCharts.js";
+

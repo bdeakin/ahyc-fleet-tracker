@@ -1,5 +1,11 @@
 # Version history
 
+## 0.8.14 — Historical charts dropdown (viewport-aware)
+
+- When the map view overlaps a chart’s coverage, a **Historical chart** dropdown appears.
+- Sheets replace the modern basemap: **1646** Dudley eastern seaboard (regional zoom), **1776** Entrance of Hudson’s River, **1845**, **1895**, and **1910** NY Bay & Harbor.
+- Choose **Modern map** to restore Carto / NOAA / ocean layers.
+
 ## 0.8.13 — Durable Railway volume path + storage health
 
 - Prefer `RAILWAY_VOLUME_MOUNT_PATH` for SQLite so redeploys keep track history when a volume is attached.

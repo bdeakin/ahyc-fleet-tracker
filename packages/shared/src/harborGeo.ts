@@ -350,9 +350,11 @@ export function describePlace(lat: number, lon: number): PlaceDescription {
   };
 }
 
-/** Short place label for trays / panes (local polygons + landmarks; no network). */
+/** Short place label for trays / panes — waterway name only (no “On the …”). */
 export function waterwayName(lat: number, lon: number): string {
-  return describePlace(lat, lon).label;
+  const place = describePlace(lat, lon);
+  if (place.waterway) return place.waterway;
+  return place.label;
 }
 
 export type MotionFix = {

@@ -17,11 +17,14 @@ import {
   distanceFromHomeNm,
   formatCourseDeg,
   formatNm,
+  historicalChartById,
+  historicalChartsForView,
   markerNeedsDarkOutline,
   relativeVesselNav,
   waterwayName,
   type AisSource,
   type ChartLayer,
+  type GeoBounds,
   type VesselLiveState,
   type VesselProfile,
 } from "@ahyc/shared";
@@ -144,6 +147,7 @@ export function KioskPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapObj = useRef<L.Map | null>(null);
   const layerRef = useRef<L.Layer | null>(null);
+  const historicalLayerRef = useRef<L.ImageOverlay | null>(null);
   const clusterRef = useRef<L.MarkerClusterGroup | L.LayerGroup | null>(null);
   const clubLayerRef = useRef<L.LayerGroup | null>(null);
   const tracksRef = useRef<L.LayerGroup | null>(null);
@@ -175,6 +179,9 @@ export function KioskPage() {
   const [vesselProfile, setVesselProfile] = useState<VesselProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [mapZoom, setMapZoom] = useState(12);
+  const [mapBounds, setMapBounds] = useState<GeoBounds | null>(null);
+  /** When set, replaces the modern basemap with a georeferenced historical chart image. */
+  const [historicalChartId, setHistoricalChartId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<Record<AisSource, boolean>>({
     radio: true,
     aishub: true,
@@ -457,26 +464,47 @@ export function KioskPage() {
     L.control.zoom({ position: "bottomright" }).addTo(map);
     setMapZoom(map.getZoom());
 
-    const onViewChange = () => {
+    const syncView = () => {
       setMapZoom(map.getZoom());
+      const b = map.getBounds();
+      setMapBounds({
+        south: b.getSouth(),
+        west: b.getWest(),
+        north: b.getNorth(),
+        east: b.getEast(),
+      });
       scheduleViewportLive();
     };
-    map.on("moveend", onViewChange);
-    map.on("zoomend", onViewChange);
+    syncView();
+    map.on("moveend", syncView);
+    map.on("zoomend", syncView);
 
     return () => {
-      map.off("moveend", onViewChange);
-      map.off("zoomend", onViewChange);
+      map.off("moveend", syncView);
+      map.off("zoomend", syncView);
       if (viewportTimerRef.current != null) window.clearTimeout(viewportTimerRef.current);
       map.remove();
       mapObj.current = null;
       clusterRef.current = null;
       clubLayerRef.current = null;
       tracksRef.current = null;
+      historicalLayerRef.current = null;
     };
     // scheduleViewportLive closes over live; map init runs once — live subscription handles fetches.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const availableHistoricalCharts = useMemo(() => {
+    if (!mapBounds) return [];
+    return historicalChartsForView(mapBounds, mapZoom);
+  }, [mapBounds, mapZoom]);
+
+  // Drop historical selection when the viewport leaves all matching charts.
+  useEffect(() => {
+    if (!historicalChartId) return;
+    if (availableHistoricalCharts.some((c) => c.id === historicalChartId)) return;
+    setHistoricalChartId(null);
+  }, [availableHistoricalCharts, historicalChartId]);
 
   useEffect(() => {
     const map = mapObj.current;
@@ -485,6 +513,46 @@ export function KioskPage() {
       map.removeLayer(layerRef.current);
       layerRef.current = null;
     }
+    if (historicalLayerRef.current) {
+      map.removeLayer(historicalLayerRef.current);
+      historicalLayerRef.current = null;
+    }
+
+    const historical = historicalChartById(historicalChartId);
+    if (historical) {
+      const { south, west, north, east } = historical.bounds;
+      const overlay = L.imageOverlay(
+        historical.imageUrl,
+        [
+          [south, west],
+          [north, east],
+        ],
+        {
+          opacity: 1,
+          interactive: false,
+          attribution: historical.attribution,
+        },
+      );
+      // Neutral paper underlay so vessels stay readable where the scan has margins.
+      const underlay = L.rectangle(
+        [
+          [south, west],
+          [north, east],
+        ],
+        {
+          stroke: false,
+          fillColor: "#d8c9a8",
+          fillOpacity: 1,
+          interactive: false,
+        },
+      );
+      const group = L.layerGroup([underlay, overlay]);
+      group.addTo(map);
+      layerRef.current = group;
+      historicalLayerRef.current = overlay;
+      return;
+    }
+
     const selected = charts.find((c) => c.id === chartId);
     if (selected?.kind === "xyz") {
       const group = L.layerGroup();
@@ -515,7 +583,7 @@ export function KioskPage() {
       });
     }
     layerRef.current.addTo(map);
-  }, [chartId, charts]);
+  }, [chartId, charts, historicalChartId]);
 
   useEffect(() => {
     if (!live) return;
@@ -1034,6 +1102,31 @@ export function KioskPage() {
           ))}
         </select>
       </div>
+      {(availableHistoricalCharts.length > 0 || historicalChartId) && (
+        <div className="historical-chart-select" role="region" aria-label="Historical charts">
+          <label htmlFor="historical-chart-select">Historical chart</label>
+          <select
+            id="historical-chart-select"
+            value={historicalChartId ?? ""}
+            onChange={(e) => setHistoricalChartId(e.target.value || null)}
+          >
+            <option value="">Modern map</option>
+            {availableHistoricalCharts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+            {/* Keep the active choice visible even if a brief pan left coverage. */}
+            {historicalChartId &&
+              !availableHistoricalCharts.some((c) => c.id === historicalChartId) &&
+              historicalChartById(historicalChartId) && (
+                <option value={historicalChartId}>
+                  {historicalChartById(historicalChartId)!.label}
+                </option>
+              )}
+          </select>
+        </div>
+      )}
       <aside className="type-legend" aria-label="Vessel type colors">
         {TYPE_LEGEND.map((item) => (
           <div key={item.label} className="type-legend-row">
@@ -1469,6 +1562,9 @@ export function KioskPage() {
                   </li>
                   <li>Club boats are starred; colors follow AIS ship type.</li>
                   <li>Use the chart picker for a sharp harbor map (coast + buoys), regional ocean depths, or full NOAA charts.</li>
+                  <li>
+                    When the view covers a charted area, a <strong>Historical chart</strong> menu appears — pick Dudley 1646 (eastern seaboard at regional zoom), or 1776 / 1845 / 1895 / 1910 harbor sheets to replace the modern basemap (choose <em>Modern map</em> to return).
+                  </li>
                 </ul>
               </section>
               <section>
