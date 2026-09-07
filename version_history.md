@@ -1,5 +1,12 @@
 # Version history
 
+## 0.9.17 — The highlighted vessel always has a position
+
+- The vessel you highlight is now guaranteed a marker at the playhead, wearing a ring so it can be found among the traffic on its own track. Two things could take it away: replay returned an arbitrary 600 of every MMSI ever stored, which on a busy harbour could omit the very boat you selected, and a vessel quiet for more than an hour was hidden by the fade rule even when it was the one being followed.
+- Replay's 600 now go to the vessels that were actually reporting in the hour before the playhead — the same hour the kiosk will draw — instead of whichever rows happened to be inserted first. `/api/tracks/replay` also takes `mmsi=`, answered from full history, so a selection is always in the payload.
+- A highlighted vessel with an old fix is drawn faint rather than dropped, at the same 0.22 the fade bottoms out at, so "this is where it last was" and "this is current" still look different. Its detail pane and marker tooltip read from the playhead.
+- Fixed with it: the ring and the never-hide rule were invisible in live mode, because the 5-second refresh runs from an interval that captured an older render and could not see the current selection.
+
 ## 0.9.16 — Scrubbed back, only the boat you picked draws a track
 
 - Replay drew a short trail for every vessel in view. It now draws a track for the selected vessel and nothing else: scrubbing is for following one boat, and fifty trails is still a pile of lines.

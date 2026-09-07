@@ -363,9 +363,14 @@ export function KioskPage() {
   const userLayerRef = useRef<L.LayerGroup | null>(null);
   const liveVesselsRef = useRef<VesselLiveState[]>([]);
   /** Markers currently on the chart, with the age of the fix each one was drawn from. */
-  const fadingMarkersRef = useRef<Array<{ ts: number; marker: L.Marker }>>([]);
+  const fadingMarkersRef = useRef<
+    Array<{ ts: number; marker: L.Marker; minOpacity: number }>
+  >([]);
   const drawMarkersRef = useRef<(vessels: VesselLiveState[]) => void>(() => undefined);
   const liveModeRef = useRef(true);
+  /** Live refreshes run from an interval that captured an older render, so marker drawing
+   * reads the selection from a ref rather than that stale closure. */
+  const selectedMmsiRef = useRef<string | null>(null);
   /**
    * The clock a fix's age is measured against. Null means the wall clock; in replay it holds
    * the playhead, so redraws triggered from elsewhere — a filter change, a pan — do not judge
@@ -485,6 +490,7 @@ export function KioskPage() {
   drawMarkersRef.current = drawMarkers;
   watchMmsisRef.current = watchMmsis;
   liveModeRef.current = live;
+  selectedMmsiRef.current = selectedMmsi;
   markerClockRef.current = live ? null : scrubTs;
   // Cards count a fix's age from the same clock the chart uses, so the two never disagree.
   const cardClock = live ? nowMs : scrubTs;
@@ -545,6 +551,9 @@ export function KioskPage() {
     const size = moving ? (registered ? 28 : 22) : registered ? 18 : 12;
     const outlineStroke = markerNeedsDarkOutline(color) ? "#0f172a" : "#ffffff";
     const riskClass = atRisk ? " vessel-marker--alert" : "";
+    const selected = v.mmsi === selectedMmsiRef.current;
+    // A ring on the highlighted boat, so it can be found among the others on its own track.
+    const selectedClass = selected ? " vessel-marker--selected" : "";
     const shapeClass = moving ? " vessel-marker--moving" : " vessel-marker--stopped";
     const pulse = atRisk
       ? `<span class="vessel-marker-pulse" aria-hidden="true"></span>`
@@ -563,16 +572,19 @@ export function KioskPage() {
       className:
         (registered ? "vessel-marker vessel-marker--club" : "vessel-marker vessel-marker--traffic") +
         shapeClass +
-        riskClass,
-      html: `${pulse}${shape}`,
+        riskClass +
+        selectedClass,
+      html: `${selected ? `<span class="vessel-marker-halo" aria-hidden="true"></span>` : ""}${pulse}${shape}`,
       iconSize: [size, moving ? Math.round(size * 1.25) : size],
       iconAnchor: [size / 2, moving ? Math.round(size * 1.25) / 2 : size / 2],
     });
     const marker = L.marker([v.lat, v.lon], {
       icon,
-      zIndexOffset: atRisk ? 900 : registered ? 500 : 0,
+      zIndexOffset: atRisk ? 900 : selected ? 800 : registered ? 500 : 0,
       riseOnHover: true,
-      opacity: stalenessOpacity(vesselAgeMs(v, asOf)),
+      opacity: selected
+        ? Math.max(STALE_MIN_OPACITY, stalenessOpacity(vesselAgeMs(v, asOf)))
+        : stalenessOpacity(vesselAgeMs(v, asOf)),
     });
     const label = v.name ?? v.mmsi;
     const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
@@ -593,17 +605,25 @@ export function KioskPage() {
     // Vessels whose last fix is old enough to be meaningless leave the chart, but stay in
     // the list behind search and the tray cards. In replay the same rule runs against the
     // playhead, so scrubbing to noon does not judge those fixes by tonight's clock.
-    const current = vessels.filter((v) => vesselAgeMs(v, asOf) < STALE_HIDE_MS);
-    setVesselCount(current.length);
+    const fresh = vessels.filter((v) => vesselAgeMs(v, asOf) < STALE_HIDE_MS);
+    setVesselCount(fresh.length);
     setLiveVessels(vessels);
     liveVesselsRef.current = vessels;
+    // The highlighted vessel keeps its marker at any age: someone asked where that boat was,
+    // and its last known position — drawn faint — is the answer, where nothing at all is not.
+    const chosen = selectedMmsiRef.current;
+    const selectedStale =
+      chosen && !fresh.some((v) => v.mmsi === chosen)
+        ? vessels.filter((v) => v.mmsi === chosen)
+        : [];
+    const current = selectedStale.length ? [...fresh, ...selectedStale] : fresh;
     const cluster = clusterRef.current;
     const clubLayer = clubLayerRef.current;
     const map = mapObj.current;
     if (!cluster || !clubLayer) return;
 
     const filter = sourceFilterRef.current;
-    const visible = current.filter((v) => sourceAllowed(v, filter));
+    const visible = fresh.filter((v) => sourceAllowed(v, filter));
     const risk = collisionRiskMmsis(visible);
     alertMmsisRef.current = risk;
     setAlertMmsis(risk);
@@ -614,14 +634,14 @@ export function KioskPage() {
     const traffic: L.Layer[] = [];
     const catFilter = categoryFilterRef.current;
     const watched = watchMmsisRef.current;
-    const drawn: Array<{ ts: number; marker: L.Marker }> = [];
+    const drawn: Array<{ ts: number; marker: L.Marker; minOpacity: number }> = [];
     for (const v of current) {
       if (!sourceAllowed(v, filter)) continue;
       if (!categoryAllowed(v, catFilter, watched)) continue;
       // Club boats outside the padded view still come from the API; skip drawing them until visible.
-      if (v.registered && map && !inMapBounds(v, map) && v.mmsi !== selectedMmsi) continue;
+      if (v.registered && map && !inMapBounds(v, map) && v.mmsi !== chosen) continue;
       const marker = makeVesselMarker(v, asOf);
-      drawn.push({ ts: v.ts, marker });
+      drawn.push({ ts: v.ts, marker, minOpacity: v.mmsi === chosen ? STALE_MIN_OPACITY : 0 });
       if (v.registered) clubLayer.addLayer(marker);
       else traffic.push(marker);
     }
@@ -645,9 +665,9 @@ export function KioskPage() {
       if (!liveModeRef.current) return;
       const now = Date.now();
       let expired = false;
-      for (const { ts, marker } of fadingMarkersRef.current) {
-        const opacity = stalenessOpacity(Math.max(0, now - ts));
-        if (opacity === 0) expired = true;
+      for (const { ts, marker, minOpacity } of fadingMarkersRef.current) {
+        const opacity = Math.max(minOpacity, stalenessOpacity(Math.max(0, now - ts)));
+        if (opacity <= 0) expired = true;
         else marker.setOpacity(opacity);
       }
       if (expired) drawMarkersRef.current(liveVesselsRef.current);
@@ -1164,7 +1184,7 @@ export function KioskPage() {
   useEffect(() => {
     drawMarkers(liveVesselsRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFilter, categoryFilter, watchMmsis]);
+  }, [sourceFilter, categoryFilter, watchMmsis, selectedMmsi]);
 
   /*
    * Replay shows where everything was at the playhead, and a path only for the vessel you
@@ -1176,7 +1196,7 @@ export function KioskPage() {
     let cancelled = false;
 
     async function drawReplay() {
-      const states = await api.replay(scrubTs);
+      const states = await api.replay(scrubTs, selectedMmsi);
       if (cancelled) return;
       drawMarkers(states, scrubTs);
       // The timeline reaches back further than traffic is kept, so an empty chart here means

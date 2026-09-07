@@ -172,7 +172,12 @@ export const api = {
     else if (mmsis && mmsis.length > 0) q.set("mmsis", mmsis.join(","));
     return json<TrackPoint[]>(`/api/tracks?${q}`);
   },
-  replay: (at: number) => json<VesselLiveState[]>(`/api/tracks/replay?at=${at}`),
+  /** `mmsi` is included even if it had gone quiet, so a selected vessel always has a position. */
+  replay: (at: number, mmsi?: string | null) => {
+    const q = new URLSearchParams({ at: String(at) });
+    if (mmsi) q.set("mmsi", mmsi);
+    return json<VesselLiveState[]>(`/api/tracks/replay?${q}`);
+  },
   seasons: (vesselId: string) =>
     json<{ vesselId: string; seasons: number[] }>(`/api/adventures/${vesselId}/seasons`),
   /** Active club vessels with years that have stored AIS traffic. */

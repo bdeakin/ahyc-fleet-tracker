@@ -49,6 +49,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - A fix's age is measured against whatever moment the chart shows — the clock when live, the playhead when scrubbed — for icon fades, tooltips, and the "last report" counters alike
 - Scrubbed back, the chart shows positions at that moment and a track for the **selected vessel only** — never every vessel's trail, and never every vessel's whole window in one colour
 - The selection follows the slider, and a vessel can be picked while scrubbed without snapping back to live
+- A highlighted vessel always has a position on the chart, ringed so it can be found on its own track — faint if its last report is old, never absent
 - The timeline reaches 48 h but traffic is kept 24 h; behind stored history the ribbon says so rather than showing a blank chart
 - Default basemap overzooms Esri Ocean past ~z13; optional Ocean + OpenSeaMap seamarks for buoys/lights without full NOAA clutter
 

@@ -1,5 +1,17 @@
 # Development narrative
 
+## 2026-09-07 — Two ways to lose the boat you were following
+
+The instruction was that scrubbing should show positions, and a highlighted vessel should show its track *and its position at that time*. The first two thirds were already in; the last clause turned out to be the interesting one, because there were two separate ways the chart could draw a vessel's track with no vessel on it.
+
+The first was the replay query. It asked for six hundred distinct MMSIs with no ordering at all, which SQLite answers in rowid order — so the cap was spent on whichever vessels appeared in the table earliest, boats that in many cases had been silent for a day, while the ones under way at the playhead were never reached. On a database with more than six hundred vessels in it, the boat you selected might simply not be in the answer. That the cap existed for memory reasons was right; that it chose arbitrarily was not. It now takes each vessel's newest fix in the hour before the playhead, which is exactly the hour the kiosk is willing to draw, ordered by recency — and the endpoint accepts the selected MMSI, answered from full history, so the one vessel that must be there always is.
+
+The second was my own fade rule from two days ago. A vessel quiet for more than an hour leaves the chart, which is the right default and precisely wrong for the boat someone is following: you highlight it, scrub to a stretch where it wasn't transmitting, and get a track with nothing on it. The selection is now exempt, drawn at the opacity the fade bottoms out at — faint enough to say "this is where it last was" rather than "this is where it is", which is the distinction the fade exists to make in the first place.
+
+Both fixes were invisible in live mode at first, and the reason is worth writing down. Marker drawing read the selection straight from component state, but the live refresh runs from an interval created in an effect that only re-runs when the mode changes, so it was calling a version of the draw function captured before anything was selected. The file already had the answer to this in four places — filters, the watch list, the alert set all read through refs for exactly this reason — so the selection now does too.
+
+While verifying, the highlighted vessel got a ring. Once its track is the only one drawn, the question becomes *where on it* the boat is, and a coloured arrow among three hundred other coloured arrows is not an answer. The pulsing red halo was already spoken for by collision risk, so this one is a steady pale ring.
+
 ## 2026-09-07 — Replay is for following one boat
 
 Cutting replay's flat teal mat down to fifty coloured trails fixed the look and still missed the point. The report back was that scrubbing showed all of them "rather than just a selected vessel," which is a better description of what replay is for than the one I had been working from. I had reasoned that replay should mirror live mode — same shapes, different clock — and live mode draws short trails for everyone in view, so replay did too. But the two modes are answering different questions. Live is ambient: you glance at it and want to know what the harbour is doing. Scrubbing is deliberate; nobody drags a slider back six hours to survey traffic in general. They do it to see where one boat went.

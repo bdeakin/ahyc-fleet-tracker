@@ -702,6 +702,32 @@ select {
   overflow: visible !important;
 }
 
+/* The highlighted vessel wears a steady ring — the red pulse is reserved for collision risk. */
+.vessel-marker--selected {
+  overflow: visible !important;
+}
+
+.vessel-marker-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  margin-top: -17px;
+  border-radius: 50%;
+  border: 2px solid rgba(240, 246, 252, 0.9);
+  box-shadow: 0 0 0 1px rgba(11, 22, 34, 0.75) inset, 0 0 6px rgba(11, 22, 34, 0.55);
+  background: rgba(61, 139, 139, 0.18);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.vessel-marker--selected .vessel-marker-shape {
+  position: relative;
+  z-index: 1;
+}
+
 .page {
   min-height: 100%;
   background:

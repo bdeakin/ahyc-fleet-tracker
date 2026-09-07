@@ -348,8 +348,10 @@ const TRACK_POINT_BUDGET = {
   all: { perVessel: 150, maxRows: 24_000 },
 };
 const MIN_BUCKET_MS = 1_000;
-/** Replay marker positions are one indexed lookup per vessel, so cap how many we walk. */
+/** How many vessels a replay frame may carry; the kiosk clusters well past this anyway. */
 const REPLAY_VESSEL_CAP = 600;
+/** Matches the kiosk's `STALE_HIDE_MS`: older than this and it would not be drawn anyway. */
+const REPLAY_LOOKBACK_MS = 3_600_000;
 
 function bucketMs(from: number, to: number, perVessel: number): number {
   const span = Math.max(0, to - from);
@@ -406,21 +408,33 @@ export function queryTracks(
     .all(opts.from, opts.to, bucketMs(opts.from, opts.to, perVessel), maxRows) as TrackPoint[];
 }
 
-export function positionsAt(db: Db, at: number): VesselLiveState[] {
-  const mmsis = db
-    .prepare("SELECT DISTINCT mmsi FROM track_points WHERE ts <= ? LIMIT ?")
-    .all(at, REPLAY_VESSEL_CAP) as Array<{ mmsi: string }>;
-  const out: VesselLiveState[] = [];
-  const stmt = db.prepare(
+/**
+ * Positions as of `at`: each vessel's newest fix in the hour before the playhead, which is the
+ * same hour the kiosk is willing to draw. Taking an arbitrary slice of every MMSI ever seen
+ * spent the cap on boats that had been silent for a day and could miss the ones under way.
+ * `include` is answered from full history regardless — that is the vessel someone selected,
+ * and its last known position is the point of asking.
+ */
+export function positionsAt(db: Db, at: number, include: string[] = []): VesselLiveState[] {
+  const rows = db
+    .prepare(
+      `SELECT mmsi, lat, lon, sog, cog, heading, MAX(ts) AS ts FROM track_points
+        WHERE ts <= ? AND ts >= ?
+        GROUP BY mmsi ORDER BY ts DESC LIMIT ?`,
+    )
+    .all(at, at - REPLAY_LOOKBACK_MS, REPLAY_VESSEL_CAP) as TrackPoint[];
+
+  const seen = new Set(rows.map((r) => r.mmsi));
+  const latest = db.prepare(
     `SELECT mmsi, lat, lon, sog, cog, heading, ts FROM track_points
-     WHERE mmsi = ? AND ts <= ? ORDER BY ts DESC LIMIT 1`,
+      WHERE mmsi = ? AND ts <= ? ORDER BY ts DESC LIMIT 1`,
   );
-  for (const { mmsi } of mmsis) {
-    const row = stmt.get(mmsi, at) as TrackPoint | undefined;
-    if (!row) continue;
-    out.push(toLive(db, row));
+  for (const mmsi of include) {
+    if (seen.has(mmsi)) continue;
+    const row = latest.get(mmsi, at) as TrackPoint | undefined;
+    if (row) rows.push(row);
   }
-  return out;
+  return rows.map((row) => toLive(db, row));
 }
 
 

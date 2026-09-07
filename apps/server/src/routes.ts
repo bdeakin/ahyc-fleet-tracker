@@ -424,9 +424,13 @@ export async function registerRoutes(
     return queryTracks(getDb(), { mmsi: req.query.mmsi, mmsis, from, to });
   });
 
-  app.get<{ Querystring: { at?: string } }>("/api/tracks/replay", async (req) => {
+  app.get<{ Querystring: { at?: string; mmsi?: string } }>("/api/tracks/replay", async (req) => {
     const at = req.query.at ? Number(req.query.at) : Date.now();
-    return positionsAt(getDb(), at);
+    const include = (req.query.mmsi ?? "")
+      .split(",")
+      .map((m) => m.trim())
+      .filter((m) => /^\d{9}$/.test(m));
+    return positionsAt(getDb(), at, include);
   });
 
   app.get<{ Querystring: { hours?: string } }>("/api/noteworthy", async (req) => {
