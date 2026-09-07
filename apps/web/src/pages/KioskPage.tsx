@@ -395,6 +395,7 @@ export function KioskPage() {
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [trackRangeHours, setTrackRangeHours] = useState(TRACK_HOURS);
   const [trackPointCount, setTrackPointCount] = useState(0);
+  const [replayEmpty, setReplayEmpty] = useState(false);
   const [vesselProfile, setVesselProfile] = useState<VesselProfile | null>(null);
   const [vesselPhoto, setVesselPhoto] = useState<VesselPhoto | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
@@ -1166,70 +1167,41 @@ export function KioskPage() {
   }, [sourceFilter, categoryFilter, watchMmsis]);
 
   /*
-   * Replay draws what live mode draws, measured against the playhead rather than the clock:
-   * positions as they were then, with a short trail behind each. Asking for every vessel's
-   * whole window and painting it in one flat colour buries a busy harbour under its own lines.
+   * Replay shows where everything was at the playhead, and a path only for the vessel you
+   * asked about. Drawing every vessel's line at once — which is what this did — buries the
+   * chart in them, and no single line can be followed through the pile.
    */
   useEffect(() => {
     if (live) return;
     let cancelled = false;
 
     async function drawReplay() {
-      const group = tracksRef.current;
-      const map = mapObj.current;
       const states = await api.replay(scrubTs);
       if (cancelled) return;
       drawMarkers(states, scrubTs);
+      // The timeline reaches back further than traffic is kept, so an empty chart here means
+      // the playhead is behind stored history rather than that the harbour was empty.
+      setReplayEmpty(states.length === 0);
+
+      const group = tracksRef.current;
       if (!group) return;
       group.clearLayers();
 
-      const colorByMmsi = new Map(states.map((v) => [v.mmsi, markerColor(v)]));
-      const inView = states.filter(
-        (v) => vesselAgeMs(v, scrubTs) < STALE_HIDE_MS && (v.registered || inMapBounds(v, map)),
-      );
-
-      if (selectedMmsi) {
-        const track = await api.tracks(scrubTs - trackRangeHours * 3600_000, scrubTs, selectedMmsi);
-        if (cancelled) return;
-        setTrackPointCount(track.length);
-        if (track.length >= 2) {
-          drawTrack(
-            group,
-            track.map((p) => [p.lat, p.lon] as L.LatLngExpression),
-            { color: colorByMmsi.get(selectedMmsi) ?? "#c45c26", weight: 4, opacity: 0.92 },
-          );
-        }
-      } else {
+      if (!selectedMmsi) {
         setTrackPointCount(0);
+        return;
       }
 
-      if ((map?.getZoom() ?? 0) < TRAIL_MIN_ZOOM) return;
-      const candidates = inView.filter((v) => v.mmsi !== selectedMmsi).slice(0, MAX_SHORT_TRAILS);
-      if (candidates.length === 0) return;
-
-      const points = await api.tracks(
-        scrubTs - DEFAULT_TRAIL_MINUTES * 60_000,
-        scrubTs,
-        undefined,
-        candidates.map((v) => v.mmsi),
-      );
+      const track = await api.tracks(scrubTs - trackRangeHours * 3600_000, scrubTs, selectedMmsi);
       if (cancelled) return;
-
-      const byMmsi = new Map<string, L.LatLngExpression[]>();
-      for (const p of points) {
-        if (!colorByMmsi.has(p.mmsi)) continue;
-        const arr = byMmsi.get(p.mmsi) ?? [];
-        arr.push([p.lat, p.lon]);
-        byMmsi.set(p.mmsi, arr);
-      }
-      for (const [mmsi, coords] of byMmsi) {
-        if (coords.length < 2) continue;
-        drawTrack(group, coords, {
-          color: colorByMmsi.get(mmsi) ?? "#6b7280",
-          weight: 2,
-          opacity: 0.75,
-        });
-      }
+      setTrackPointCount(track.length);
+      if (track.length < 2) return;
+      const selected = states.find((v) => v.mmsi === selectedMmsi);
+      drawTrack(
+        group,
+        track.map((p) => [p.lat, p.lon] as L.LatLngExpression),
+        { color: selected ? markerColor(selected) : "#c45c26", weight: 4, opacity: 0.92 },
+      );
     }
 
     drawReplay().catch(() => undefined);
@@ -1237,7 +1209,7 @@ export function KioskPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, scrubTs, trackRangeHours, selectedMmsi, mapZoom]);
+  }, [live, scrubTs, trackRangeHours, selectedMmsi]);
 
   // Live mode: short trails for nearby vessels when zoomed in; selected vessel uses chosen range.
   useEffect(() => {
@@ -1534,11 +1506,6 @@ export function KioskPage() {
       skipPanelOpenRef.current = true;
       setMobilePanel(null);
     }
-    if (!live) {
-      setLive(true);
-      setSlider(HOURS * 60);
-      setRangeEnd(Date.now());
-    }
     const map = mapObj.current;
     if (map && Number.isFinite(v.lat) && Number.isFinite(v.lon)) {
       map.flyTo([v.lat, v.lon], Math.max(map.getZoom(), 14), { duration: 0.85 });
@@ -1547,8 +1514,9 @@ export function KioskPage() {
 
 
 
-  const trailsNote =
-    mapZoom >= TRAIL_MIN_ZOOM
+  const trailsNote = !live
+    ? " · pick a vessel for its track"
+    : mapZoom >= TRAIL_MIN_ZOOM
       ? ` · trails ${DEFAULT_TRAIL_MINUTES}m`
       : " · trails when zoomed in";
 
@@ -2454,7 +2422,11 @@ export function KioskPage() {
           <span>
             {live ? "Live" : "Replay"}
             {vesselCount ? ` · ${vesselCount} in view` : ""}
-            {selectedMmsi ? ` · track ${trackRangeHours >= 24 && trackRangeHours % 24 === 0 ? `${trackRangeHours / 24}d` : `${trackRangeHours}h`}` : trailsNote}
+            {!live && replayEmpty
+              ? " · nothing stored this far back"
+              : selectedMmsi
+                ? ` · track ${trackRangeHours >= 24 && trackRangeHours % 24 === 0 ? `${trackRangeHours / 24}d` : `${trackRangeHours}h`}`
+                : trailsNote}
           </span>
           <span>{new Date(scrubTs).toLocaleString()}</span>
         </label>
@@ -2505,9 +2477,9 @@ export function KioskPage() {
           max={HOURS * 60}
           value={slider}
           onChange={(e) => {
+            // The selection survives scrubbing: following one boat back through the day is
+            // the reason to scrub at all, and its track is the only one replay draws.
             setLive(false);
-            setSelectedMmsi(null);
-            setSelectedLabel(null);
             setSlider(Number(e.target.value));
           }}
         />
@@ -2595,7 +2567,7 @@ export function KioskPage() {
                 <ul>
                   <li>Selected vessel: 24h / 7d / 30d track buttons use whatever history is stored.</li>
                   <li>The bottom ribbon shows AISHub refresh countdown, club boats tracked outside the NE box, and how far back stored AIS goes.</li>
-                  <li>Scrub the timeline to replay earlier positions.</li>
+                  <li>Scrub the timeline to replay earlier positions. Only the selected vessel draws a track while scrubbed; the selection follows you back through the day.</li>
                 </ul>
               </section>
             </div>

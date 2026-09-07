@@ -47,7 +47,9 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 - AIS markers: circle when stopped, course arrow when moving; zoom control bottom-right; tagline top-center
 - Transponder icons fade after 10 minutes without a report and leave the chart after an hour; the vessel stays in search and on its tray card
 - A fix's age is measured against whatever moment the chart shows — the clock when live, the playhead when scrubbed — for icon fades, tooltips, and the "last report" counters alike
-- Scrubbed back, the chart looks like live mode at that moment: positions then, short trails behind the ships in view, coloured by type — never every vessel's whole window in one colour
+- Scrubbed back, the chart shows positions at that moment and a track for the **selected vessel only** — never every vessel's trail, and never every vessel's whole window in one colour
+- The selection follows the slider, and a vessel can be picked while scrubbed without snapping back to live
+- The timeline reaches 48 h but traffic is kept 24 h; behind stored history the ribbon says so rather than showing a blank chart
 - Default basemap overzooms Esri Ocean past ~z13; optional Ocean + OpenSeaMap seamarks for buoys/lights without full NOAA clutter
 
 ## AISHub (Northeast + offshore)

@@ -1,5 +1,13 @@
 # Development narrative
 
+## 2026-09-07 — Replay is for following one boat
+
+Cutting replay's flat teal mat down to fifty coloured trails fixed the look and still missed the point. The report back was that scrubbing showed all of them "rather than just a selected vessel," which is a better description of what replay is for than the one I had been working from. I had reasoned that replay should mirror live mode — same shapes, different clock — and live mode draws short trails for everyone in view, so replay did too. But the two modes are answering different questions. Live is ambient: you glance at it and want to know what the harbour is doing. Scrubbing is deliberate; nobody drags a slider back six hours to survey traffic in general. They do it to see where one boat went.
+
+So replay now draws positions for everything and a track for exactly one vessel, the one you picked. What made this worth more than deleting a block of code is that the feature it implies was unreachable. The timeline's slider cleared the selection on every change, and clicking a vessel while scrubbed snapped the chart back to live — so in the state where "just the selected vessel" matters, there was never a selection to draw. Both behaviours make sense for a mode that only ever showed everything at once, and both had to go: the selection now follows you back through the day, and you can pick a boat mid-replay without losing your place in it.
+
+Verifying it turned up something that looked like a bug and wasn't. Scrubbing far enough left emptied the chart completely. The timeline covers 48 hours; traffic is kept for 24. Past that line there is genuinely nothing to draw, and the chart was being honest — it just had no way to say so, which is indistinguishable from being broken. The ribbon now says "nothing stored this far back," and while scrubbed with nothing selected it says "pick a vessel for its track," so both empty states explain themselves.
+
 ## 2026-09-06 — The green tracks were always there
 
 A screenshot arrived of the East River buried under teal lines, with a fair question attached: what happened? The honest answer is that nothing new was written — the code that draws those lines has been in the file since the first commit. What changed is that it started working.

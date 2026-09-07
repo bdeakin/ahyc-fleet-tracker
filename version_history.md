@@ -1,5 +1,11 @@
 # Version history
 
+## 0.9.16 — Scrubbed back, only the boat you picked draws a track
+
+- Replay drew a short trail for every vessel in view. It now draws a track for the selected vessel and nothing else: scrubbing is for following one boat, and fifty trails is still a pile of lines.
+- The selection survives scrubbing. The timeline used to clear it on every move of the slider, which is why there was never a selected vessel to draw — and picking one no longer snaps back to live, so you can choose a boat mid-replay and keep the playhead where it is. Its detail pane reads at the playhead.
+- Scrubbing behind stored history is explained rather than blank: the timeline covers 48 h and traffic is kept 24 h, so the ribbon says "nothing stored this far back" instead of leaving an empty chart. The ribbon otherwise says "pick a vessel for its track" while scrubbed.
+
 ## 0.9.15 — Replay stops painting the harbour green
 
 - Scrubbing back drew every vessel's entire window as one flat teal line. On the East River with 293 ships in view that is a solid mat of lines over the chart, and it was reproduced here with 300 synthetic vessels: 300 tracks, no vessel icons, and no way to tell one ship from another.
