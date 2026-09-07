@@ -1,5 +1,12 @@
 # Version history
 
+## 0.9.15 — Replay stops painting the harbour green
+
+- Scrubbing back drew every vessel's entire window as one flat teal line. On the East River with 293 ships in view that is a solid mat of lines over the chart, and it was reproduced here with 300 synthetic vessels: 300 tracks, no vessel icons, and no way to tell one ship from another.
+- Replay now shows what live mode shows, measured from the playhead: positions as they were then, coloured by vessel type, with a 10-minute trail behind up to 50 of the ships in view, and trails hidden below zoom 11 exactly as live does. Verified: 50 trails in 8 colours where there had been 300 in one, and 281 icons where there had been none.
+- Fixed with it: a vessel's icon disappeared as soon as you scrubbed more than an hour back, because 0.9.14's staleness rule measured a historical fix against the current time. Age is now measured against whichever clock the chart is showing, and the "last report" counter on cards follows the same clock, so a card and the chart never disagree.
+- Each scrub now asks for one 10-minute window of at most 50 vessels rather than 24 hours of every vessel, which also takes the heaviest remaining query off the server.
+
 ## 0.9.14 — Stale transponders fade off the chart
 
 - A vessel's icon is drawn at full strength for the first 10 minutes after its last AIS report, then fades steadily, and leaves the chart an hour after that report. Class A transmits every few seconds and class B every 30, so a ten-minute-old fix is already a guess and an hour-old one only says something was once there.

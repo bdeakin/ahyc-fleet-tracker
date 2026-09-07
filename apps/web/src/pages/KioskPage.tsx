@@ -366,6 +366,12 @@ export function KioskPage() {
   const fadingMarkersRef = useRef<Array<{ ts: number; marker: L.Marker }>>([]);
   const drawMarkersRef = useRef<(vessels: VesselLiveState[]) => void>(() => undefined);
   const liveModeRef = useRef(true);
+  /**
+   * The clock a fix's age is measured against. Null means the wall clock; in replay it holds
+   * the playhead, so redraws triggered from elsewhere — a filter change, a pan — do not judge
+   * historical fixes by the current time and erase every marker.
+   */
+  const markerClockRef = useRef<number | null>(null);
   const sourceFilterRef = useRef<Record<AisSource, boolean>>({
     radio: true,
     aishub: true,
@@ -478,6 +484,9 @@ export function KioskPage() {
   drawMarkersRef.current = drawMarkers;
   watchMmsisRef.current = watchMmsis;
   liveModeRef.current = live;
+  markerClockRef.current = live ? null : scrubTs;
+  // Cards count a fix's age from the same clock the chart uses, so the two never disagree.
+  const cardClock = live ? nowMs : scrubTs;
 
   const selectedVessel = useMemo(
     () => liveVessels.find((v) => v.mmsi === selectedMmsi) ?? null,
@@ -519,7 +528,8 @@ export function KioskPage() {
     return Math.max(0, Math.ceil((next - nowTs) / 1000));
   }, [aishubStatus, nowTs]);
 
-  function makeVesselMarker(v: VesselLiveState): L.Marker {
+  /** `asOf` is the clock a fix's age is measured against: now when live, the playhead in replay. */
+  function makeVesselMarker(v: VesselLiveState, asOf: number): L.Marker {
     const registered = Boolean(v.registered);
     const color = markerColor(v);
     const atRisk = alertMmsisRef.current.has(v.mmsi);
@@ -561,14 +571,14 @@ export function KioskPage() {
       icon,
       zIndexOffset: atRisk ? 900 : registered ? 500 : 0,
       riseOnHover: true,
-      opacity: stalenessOpacity(vesselAgeMs(v, Date.now())),
+      opacity: stalenessOpacity(vesselAgeMs(v, asOf)),
     });
     const label = v.name ?? v.mmsi;
     const typeBit = registered ? "AHYC club" : (v.shipTypeLabel ?? "traffic");
     const sourceBit = AIS_SOURCE_LABELS[(v.source ?? "unknown") as AisSource];
     const ageBit =
-      vesselAgeMs(v, Date.now()) > STALE_FADE_START_MS
-        ? ` · last report ${formatElapsedSince(v.ts, Date.now())}`
+      vesselAgeMs(v, asOf) > STALE_FADE_START_MS
+        ? ` · last report ${formatElapsedSince(v.ts, asOf)}`
         : "";
     marker.bindTooltip(
       `${label} (${typeBit} · ${sourceBit})${v.sog != null ? ` · ${v.sog.toFixed(1)} kn` : ""}${ageBit}`,
@@ -578,11 +588,11 @@ export function KioskPage() {
     return marker;
   }
 
-  function drawMarkers(vessels: VesselLiveState[]) {
-    const now = Date.now();
+  function drawMarkers(vessels: VesselLiveState[], asOf = markerClockRef.current ?? Date.now()) {
     // Vessels whose last fix is old enough to be meaningless leave the chart, but stay in
-    // the list behind search and the tray cards.
-    const current = vessels.filter((v) => vesselAgeMs(v, now) < STALE_HIDE_MS);
+    // the list behind search and the tray cards. In replay the same rule runs against the
+    // playhead, so scrubbing to noon does not judge those fixes by tonight's clock.
+    const current = vessels.filter((v) => vesselAgeMs(v, asOf) < STALE_HIDE_MS);
     setVesselCount(current.length);
     setLiveVessels(vessels);
     liveVesselsRef.current = vessels;
@@ -609,7 +619,7 @@ export function KioskPage() {
       if (!categoryAllowed(v, catFilter, watched)) continue;
       // Club boats outside the padded view still come from the API; skip drawing them until visible.
       if (v.registered && map && !inMapBounds(v, map) && v.mmsi !== selectedMmsi) continue;
-      const marker = makeVesselMarker(v);
+      const marker = makeVesselMarker(v, asOf);
       drawn.push({ ts: v.ts, marker });
       if (v.registered) clubLayer.addLayer(marker);
       else traffic.push(marker);
@@ -629,6 +639,9 @@ export function KioskPage() {
   // leave the chart, which is rare next to the every-few-seconds live refresh.
   useEffect(() => {
     const id = window.setInterval(() => {
+      // Replay markers are aged against the playhead when they are drawn and do not move
+      // after that, so the wall clock has no business fading them.
+      if (!liveModeRef.current) return;
       const now = Date.now();
       let expired = false;
       for (const { ts, marker } of fadingMarkersRef.current) {
@@ -1152,31 +1165,79 @@ export function KioskPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceFilter, categoryFilter, watchMmsis]);
 
+  /*
+   * Replay draws what live mode draws, measured against the playhead rather than the clock:
+   * positions as they were then, with a short trail behind each. Asking for every vessel's
+   * whole window and painting it in one flat colour buries a busy harbour under its own lines.
+   */
   useEffect(() => {
     if (live) return;
-    api.replay(scrubTs).then(drawMarkers).catch(() => undefined);
-    api
-      .tracks(windowStart, scrubTs)
-      .then((points) => {
-        const group = tracksRef.current;
-        const map = mapObj.current;
-        if (!group) return;
-        group.clearLayers();
-        const bounds = map?.getBounds().pad(VIEWPORT_PAD);
-        const byMmsi = new Map<string, L.LatLngExpression[]>();
-        for (const p of points) {
-          if (bounds && !bounds.contains([p.lat, p.lon])) continue;
-          const arr = byMmsi.get(p.mmsi) ?? [];
-          arr.push([p.lat, p.lon]);
-          byMmsi.set(p.mmsi, arr);
+    let cancelled = false;
+
+    async function drawReplay() {
+      const group = tracksRef.current;
+      const map = mapObj.current;
+      const states = await api.replay(scrubTs);
+      if (cancelled) return;
+      drawMarkers(states, scrubTs);
+      if (!group) return;
+      group.clearLayers();
+
+      const colorByMmsi = new Map(states.map((v) => [v.mmsi, markerColor(v)]));
+      const inView = states.filter(
+        (v) => vesselAgeMs(v, scrubTs) < STALE_HIDE_MS && (v.registered || inMapBounds(v, map)),
+      );
+
+      if (selectedMmsi) {
+        const track = await api.tracks(scrubTs - trackRangeHours * 3600_000, scrubTs, selectedMmsi);
+        if (cancelled) return;
+        setTrackPointCount(track.length);
+        if (track.length >= 2) {
+          drawTrack(
+            group,
+            track.map((p) => [p.lat, p.lon] as L.LatLngExpression),
+            { color: colorByMmsi.get(selectedMmsi) ?? "#c45c26", weight: 4, opacity: 0.92 },
+          );
         }
-        for (const coords of byMmsi.values()) {
-          drawTrack(group, coords, { color: "#3d8b8b", weight: 3, opacity: 0.85 });
-        }
-      })
-      .catch(() => undefined);
+      } else {
+        setTrackPointCount(0);
+      }
+
+      if ((map?.getZoom() ?? 0) < TRAIL_MIN_ZOOM) return;
+      const candidates = inView.filter((v) => v.mmsi !== selectedMmsi).slice(0, MAX_SHORT_TRAILS);
+      if (candidates.length === 0) return;
+
+      const points = await api.tracks(
+        scrubTs - DEFAULT_TRAIL_MINUTES * 60_000,
+        scrubTs,
+        undefined,
+        candidates.map((v) => v.mmsi),
+      );
+      if (cancelled) return;
+
+      const byMmsi = new Map<string, L.LatLngExpression[]>();
+      for (const p of points) {
+        if (!colorByMmsi.has(p.mmsi)) continue;
+        const arr = byMmsi.get(p.mmsi) ?? [];
+        arr.push([p.lat, p.lon]);
+        byMmsi.set(p.mmsi, arr);
+      }
+      for (const [mmsi, coords] of byMmsi) {
+        if (coords.length < 2) continue;
+        drawTrack(group, coords, {
+          color: colorByMmsi.get(mmsi) ?? "#6b7280",
+          weight: 2,
+          opacity: 0.75,
+        });
+      }
+    }
+
+    drawReplay().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, scrubTs, windowStart]);
+  }, [live, scrubTs, trackRangeHours, selectedMmsi, mapZoom]);
 
   // Live mode: short trails for nearby vessels when zoomed in; selected vessel uses chosen range.
   useEffect(() => {
@@ -2108,7 +2169,7 @@ export function KioskPage() {
                             className="vessel-tray-age"
                             title={new Date(v.ts).toLocaleString()}
                           >
-                            Last report {formatElapsedSince(v.ts, nowMs)}
+                            Last report {formatElapsedSince(v.ts, cardClock)}
                           </span>
                           <span className="vessel-tray-area">{area}</span>
                         </button>
@@ -2306,7 +2367,7 @@ export function KioskPage() {
                 title={new Date(selectedVessel.ts).toLocaleString()}
                 aria-live="polite"
               >
-                {formatElapsedSince(selectedVessel.ts, nowMs)}
+                {formatElapsedSince(selectedVessel.ts, cardClock)}
               </dd>
             </div>
             <div>

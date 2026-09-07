@@ -1,5 +1,17 @@
 # Development narrative
 
+## 2026-09-06 — The green tracks were always there
+
+A screenshot arrived of the East River buried under teal lines, with a fair question attached: what happened? The honest answer is that nothing new was written — the code that draws those lines has been in the file since the first commit. What changed is that it started working.
+
+Replay asked for every vessel's entire window and painted each one as a flat teal line. On a phone, against a harbour database, that request returned hundreds of thousands of points after fifteen seconds, and it simply never arrived in a state the map could use. Last week's memory work capped and thinned that query, so it now returns in about two seconds — and the layer it feeds did exactly what it had always been written to do, for 293 vessels at once. A feature nobody had seen was hiding behind a query nobody could complete.
+
+Which raised the more useful question: what *should* replay draw? Live mode had already answered it. It draws positions now, short trails behind the ships in view, capped at fifty, coloured by type, and no trails at all when zoomed out far enough that they would be noise. Replay wants the same thing with one word changed — "now" becomes "then". So it draws positions at the playhead and a ten-minute trail behind each, and the flat teal is gone because colour already means something on this chart.
+
+Reproducing it first was worth the detour. Three hundred synthetic vessels working the bay produced the screenshot almost exactly, and the numbers said more than the picture: 300 tracks in a single colour, and zero vessel icons. That second number was a bug I had shipped the day before. Icons fade with the age of their fix, and age was being measured against the current time — which is correct when the chart is showing now, and nonsense when it is showing four in the morning. Scrub back more than an hour and every marker on the chart judged itself stale and vanished, which is why the user's screenshot has lines and no ships.
+
+The fix is to stop assuming there is one clock. Age is measured against whatever moment the chart is displaying, held in a ref so that a redraw arriving from somewhere else — a filter toggle, a pan — cannot quietly fall back to the wall clock and empty the chart again. That last part was not hypothetical: the first version passed the playhead only at the call site I had changed, and a filter redraw racing behind it wiped all 281 markers. The fade ticker sits out replay entirely, since a historical position does not get older while you look at it. And the "last report" counter on the cards reads from the same clock as the chart, so the card no longer says sixteen hours next to an icon the map is presenting as current.
+
 ## 2026-09-06 — A position is only as good as its age
 
 Every icon on the chart was drawn as though it were current, whether the report behind it arrived four seconds ago or four hours ago. On a harbour feed that stitches together a radio receiver, AISHub and AISStream, plenty of vessels stop reporting while their last known position sits there looking authoritative — a ghost fleet that never moves and never leaves.
