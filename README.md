@@ -49,7 +49,7 @@ Database file: `$DATA_DIR/db/ahyc.sqlite` (local default `./data/db/ahyc.sqlite`
 
 **Supabase is not required.** Follow **[`deploy/CLOUD.md`](deploy/CLOUD.md)** — Railway + AISStream API key + strong admin token + volume at `/data`.
 
-Optional: set `AISHUB_USERNAME` for wider Northeast / Great Lakes coverage; set `AIS_INGEST_TOKEN` if a Pi forwarder will push local radio traffic.
+Optional: set `AISHUB_USERNAME` for wider Northeast / Great Lakes coverage; set `AIS_INGEST_TOKEN` if a Pi forwarder will push local radio traffic. The AISHub username is earned by feeding them a receiver — antenna to account in **[`deploy/AISHUB.md`](deploy/AISHUB.md)**.
 
 ## Quick start (laptop)
 

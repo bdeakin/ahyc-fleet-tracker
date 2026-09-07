@@ -35,6 +35,11 @@ sudo systemctl enable --now ahyc-kiosk
 
 Kiosk opens `http://127.0.0.1:8787/` in Chromium `--kiosk` via `deploy/kiosk.sh`.
 
+## AIS feeds (optional)
+
+- Club radio receiver → [`ais-forwarder/README.md`](ais-forwarder/README.md)
+- AISHub station and account, from antenna to `AISHUB_USERNAME` → [`AISHUB.md`](AISHUB.md)
+
 ## Supabase (optional)
 
 1. Create a Supabase project.

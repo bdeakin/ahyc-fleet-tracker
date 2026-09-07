@@ -23,7 +23,7 @@ export type AishubStatus = {
   lastFetched: number;
   /** Vessels accepted into live state from the last response. */
   lastIngested: number;
-  /** Region id of the last bbox pull (atlantic-ne / great-lakes). */
+  /** Region id of the last bbox pull, one of {@link AISHUB_REGIONS}. */
   lastRegion: string | null;
   watchlist: string[];
   /** Club vessels on AISHub MMSI watch (outside/near NE bbox). */

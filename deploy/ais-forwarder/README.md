@@ -29,7 +29,7 @@ Add a UDP output destination:
 - Host: `127.0.0.1`
 - Port: `10110`
 
-Keep your AISHub destination as well.
+Keep your AISHub destination as well — see [AISHUB.md](../AISHUB.md) for the station and account side.
 
 ## Railway
 

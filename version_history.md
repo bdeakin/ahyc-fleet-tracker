@@ -1,5 +1,11 @@
 # Version history
 
+## 0.9.18 — AISHub station guide
+
+- `deploy/AISHUB.md`: the path from the antenna already on the clubhouse to `AISHUB_USERNAME` on Railway — why an antenna is not a station, the receiver and host it needs, getting NMEA out over AIS Dispatcher or AIS-catcher, the application and its quality gates, and which of the two feeds (cooperative API, local radio) each part of the app already reads.
+- Linked from `README.md`, `deploy/README.md`, `.env.example` and the forwarder README, so the AISHub variable now has something behind it wherever it is mentioned.
+- Corrected the AISHub region names in `architecture.md` and `prompts.md`: the poller rotates `ny-nj-midatlantic`, `new-england` and `great-lakes`, not the two regions those docs described.
+
 ## 0.9.17 — The highlighted vessel always has a position
 
 - The vessel you highlight is now guaranteed a marker at the playhead, wearing a ring so it can be found among the traffic on its own track. Two things could take it away: replay returned an arbitrary 600 of every MMSI ever stored, which on a busy harbour could omit the very boat you selected, and a vessel quiet for more than an hour was hidden by the fade rule even when it was the one being followed.

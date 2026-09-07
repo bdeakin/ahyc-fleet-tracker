@@ -1,5 +1,13 @@
 # Development narrative
 
+## 2026-09-07 — The antenna is not the station
+
+The club has an antenna on the building, and the natural assumption is that the hard part is done. It isn't: an antenna receives RF, and AISHub wants decoded NMEA sentences over UDP from a station that stays up. Between those two facts sit a receiver, a host that runs all night, and an application process with quality gates on it. `deploy/AISHUB.md` writes that path down, because the alternative is buying an SDR to find out the receiver was already there, or applying before there is a feed to point at.
+
+Writing it turned into a useful audit of what the app actually does, since a guide that describes intentions rather than code is worse than nothing. Two claims in our own documentation were wrong: `architecture.md` and `prompts.md` both said the poller rotates two regions, "Atlantic NE" and Great Lakes, when it has rotated three since someone discovered that one large rectangle comes back empty from AISHub and split home waters into their own smaller box. The guide now names what the code names, and both docs were corrected to match.
+
+The other thing worth stating plainly in the guide is that the two feeds are complements. The cooperative API buys coverage a minute at a time across the whole Northeast, which is what matters when a club boat is off Block Island. The local radio path buys seconds of latency inside the harbor, filtered to the NYC box. People reasonably assume one supersedes the other and turn one off.
+
 ## 2026-09-07 — Two ways to lose the boat you were following
 
 The instruction was that scrubbing should show positions, and a highlighted vessel should show its track *and its position at that time*. The first two thirds were already in; the last clause turned out to be the interesting one, because there were two separate ways the chart could draw a vessel's track with no vessel on it.

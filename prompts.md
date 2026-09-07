@@ -56,6 +56,7 @@ Build a yacht-club kiosk for Atlantic Highlands Yacht Club that shows local sail
 ## AISHub (Northeast + offshore)
 
 - Set `AISHUB_USERNAME` on Railway
-- Rotating regions: Atlantic NE + Great Lakes (union used for perimeter watch)
+- Rotating regions: NY/NJ Mid-Atlantic, New England, Great Lakes (union used for perimeter watch)
 - Poll AISHub every 5 minutes by default (never more than once per minute)
 - Tag ingest `source=aishub`; status at `/api/aishub/status`
+- The username is earned by feeding a station: antenna → receiver → Pi → AIS Dispatcher → AISHub, written up in `deploy/AISHUB.md`

@@ -30,7 +30,8 @@ Kiosk checkboxes filter markers by source (Radio / AISHub / AISStream).
 ## AISHub (optional)
 
 - Env: `AISHUB_USERNAME` on Railway.
-- Rotating bbox regions in `AISHUB_REGIONS`: `atlantic-ne` (Chesapeake→Maine) and `great-lakes` (Superior→Ontario). Union `NORTHEAST_BBOX` is used for perimeter / watch hysteresis.
+- Rotating bbox regions in `AISHUB_REGIONS`: `ny-nj-midatlantic` (Chesapeake→Long Island), `new-england` (the Sound→Maine) and `great-lakes` (Superior→Ontario) — one huge rectangle comes back empty from AISHub, so home waters are polled as their own smaller box. Union `NORTHEAST_BBOX` is used for perimeter / watch hysteresis.
+- Earning `AISHUB_USERNAME` means running a receiving station: hardware, AIS Dispatcher and the application are documented in `deploy/AISHUB.md`.
 - Perimeter watch: club boats near/outside the union box are stored in SQLite `aishub_watch` and queried via the AISHub `mmsi=` parameter until `deepInsideBbox`.
 - Rate limit: one HTTP request every 5 minutes by default (API floor: 1/min); bbox region rotation + MMSI share a single scheduler.
 - Status: `GET /api/aishub/status` (`lastFetched`, `lastIngested`, `lastRegion`, …).
