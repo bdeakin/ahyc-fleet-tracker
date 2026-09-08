@@ -160,6 +160,11 @@ export type ChartLayer =
       transparent?: boolean;
       attribution?: string;
       maxZoom?: number;
+      /**
+       * Lowest zoom the ENC is drawn at. Below this the Maritime Chart Service
+       * returns empty tiles, so the kiosk keeps a world basemap visible instead.
+       */
+      minZoom?: number;
     }
   | {
       id: string;
@@ -324,6 +329,13 @@ export function deepInsideBbox(
 
 export const NOAA_CHART_WMS =
   "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/WMSServer";
+
+/**
+ * Smallest Leaflet zoom at which NOAA MCS still returns a chart. GetMap for the
+ * eastern US at z6/z7 is a blank PNG; z8 is the first scale with ENC cells.
+ * Below this the kiosk shows the ocean basemap underneath instead of empty paper.
+ */
+export const NOAA_CHART_MIN_ZOOM = 8;
 
 /** Every view group the NOAA Maritime Chart Service publishes (base through overscale warnings). */
 export const NOAA_CHART_WMS_LAYERS_ALL = "0,1,2,3,4,5,6,7,8,9,10,11,12";

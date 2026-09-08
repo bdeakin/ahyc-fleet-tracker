@@ -10,6 +10,7 @@ import {
   ESRI_OCEAN_MAX_NATIVE_ZOOM,
   ESRI_OCEAN_REFERENCE,
   NOAA_CHART_ATTRIBUTION,
+  NOAA_CHART_MIN_ZOOM,
   NOAA_CHART_WMS_LAYERS_ALL,
   NOAA_CHART_WMS_LAYERS_PAPER,
   NOAA_PAPER_CHART_PARAMS,
@@ -44,6 +45,7 @@ export function listChartLayers(): ChartLayer[] {
       transparent: false,
       attribution: NOAA_CHART_ATTRIBUTION,
       maxZoom: 18,
+      minZoom: NOAA_CHART_MIN_ZOOM,
     },
     {
       id: "harbor-clean",
@@ -98,6 +100,7 @@ export function listChartLayers(): ChartLayer[] {
       transparent: false,
       attribution: NOAA_CHART_ATTRIBUTION,
       maxZoom: 18,
+      minZoom: NOAA_CHART_MIN_ZOOM,
     },
   ];
   for (const file of fs.readdirSync(paths.charts)) {

@@ -8,7 +8,12 @@ import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import {
   AHYC_CENTER,
   AIS_SOURCE_LABELS,
+  ESRI_OCEAN_ATTRIBUTION,
+  ESRI_OCEAN_BASE,
+  ESRI_OCEAN_MAX_NATIVE_ZOOM,
+  ESRI_OCEAN_REFERENCE,
   HISTORICAL_CHARTS,
+  NOAA_CHART_MIN_ZOOM,
   NOAA_CHART_WMS,
   NOAA_CHART_WMS_LAYERS_ALL,
   bearingToCardinal,
@@ -1146,15 +1151,29 @@ export function KioskPage() {
       });
     } else {
       // NOAA ENC via the Maritime Chart Service. The layer's S-52 parameters decide whether
-      // it draws like a paper chart or the full ECDIS display.
-      layerRef.current = L.tileLayer.wms(selected?.url ?? NOAA_CHART_WMS, {
+      // it draws like a paper chart or the full ECDIS display. MCS has no cells at world
+      // and continental scales — GetMap comes back as a blank tile — so Esri Ocean sits
+      // underneath and NOAA only paints from the zoom where ENC cells exist.
+      const group = L.layerGroup();
+      L.tileLayer(ESRI_OCEAN_BASE, {
+        maxZoom: 18,
+        maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM,
+        attribution: ESRI_OCEAN_ATTRIBUTION,
+      }).addTo(group);
+      L.tileLayer(ESRI_OCEAN_REFERENCE, {
+        maxZoom: 18,
+        maxNativeZoom: ESRI_OCEAN_MAX_NATIVE_ZOOM,
+      }).addTo(group);
+      L.tileLayer.wms(selected?.url ?? NOAA_CHART_WMS, {
         layers: selected?.layers ?? NOAA_CHART_WMS_LAYERS_ALL,
         format: "image/png",
         transparent: selected?.transparent ?? true,
+        minZoom: selected?.minZoom ?? NOAA_CHART_MIN_ZOOM,
         maxZoom: selected?.maxZoom ?? 18,
         attribution: selected?.attribution ?? "NOAA Chart Display Service",
         ...(selected?.params ?? {}),
-      });
+      }).addTo(group);
+      layerRef.current = group;
     }
     layerRef.current.addTo(map);
   }, [chartId, charts, historicalChartId]);
@@ -2547,7 +2566,7 @@ export function KioskPage() {
                     Club boats are drawn in the club colors — red, white, blue — and their cards
                     fly the burgee; other colors follow AIS ship type.
                   </li>
-                  <li>Use the chart picker for a sharp harbor map (coast + buoys), regional ocean depths, or full NOAA charts.</li>
+                  <li>Use the chart picker for a sharp harbor map (coast + buoys), regional ocean depths, or full NOAA charts. NOAA paper and ENC charts appear once you zoom in to the coast; zoomed out, the ocean basemap stays so the chart is never a blank page.</li>
                   <li>
                     When the view covers a charted area, a <strong>Historical chart</strong> menu appears — pick Dudley 1646 (eastern seaboard at regional zoom), or 1776 / 1845 / 1895 / 1910 harbor sheets to replace the modern basemap (choose <em>Modern map</em> to return).
                   </li>

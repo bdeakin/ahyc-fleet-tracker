@@ -1,5 +1,10 @@
 # Version history
 
+## 0.9.19 — NOAA charts keep a map when zoomed out
+
+- NOAA's Maritime Chart Service has no ENC cells at world and continental scales: a GetMap for the eastern US at Leaflet zoom 6 is a 363-byte blank tile, and at zoom 8 the chart appears. Zooming out on the default paper chart (or the all-detail ENC) therefore used to replace the harbour with an empty grey-green page, clusters still sitting on nothing.
+- Both NOAA layers now sit on Esri Ocean and only paint from zoom 8 (`NOAA_CHART_MIN_ZOOM`). Zoomed out you see bathymetry and coastlines; zoomed in, the paper chart covers it as before.
+
 ## 0.9.18 — AISHub station guide
 
 - `deploy/AISHUB.md`: the path from the antenna already on the clubhouse to `AISHUB_USERNAME` on Railway — why an antenna is not a station, the receiver and host it needs, getting NMEA out over AIS Dispatcher or AIS-catcher, the application and its quality gates, and which of the two feeds (cooperative API, local radio) each part of the app already reads.

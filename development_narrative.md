@@ -1,5 +1,11 @@
 # Development narrative
 
+## 2026-09-08 — Empty paper at the scale of a continent
+
+The report was that scrolling out far enough made the map disappear: clusters still numbered in the hundreds, NOAA still claimed the attribution, and the page behind them was a flat grey-green. That is exactly what the Maritime Chart Service returns when you ask it for a continent. I fetched GetMap for the eastern US at Leaflet zoom 4, 6, 7 and 8. The first three are 363-byte blank PNGs. Zoom 8 is a real chart of Long Island Sound. The kiosk's minimum zoom is 3, so anyone pinching out past the coast was looking at empty tiles the service is honest enough to serve, and `transparent: false` made those tiles an opaque nothing.
+
+The ENC cells NOAA publishes simply do not exist at that scale. Forcing them to, or pretending the blank is a bug in our code, would be the wrong fix. The paper chart is for harbour and coastal work; a world view wants bathymetry and coastlines, which Esri Ocean already has. Both NOAA layers now sit on that basemap and only paint from zoom 8, the first scale that actually has cells. Pinch out and the ocean is still there. Pinch back in and the soundings cover it the way they always did.
+
 ## 2026-09-07 — The antenna is not the station
 
 The club has an antenna on the building, and the natural assumption is that the hard part is done. It isn't: an antenna receives RF, and AISHub wants decoded NMEA sentences over UDP from a station that stays up. Between those two facts sit a receiver, a host that runs all night, and an application process with quality gates on it. `deploy/AISHUB.md` writes that path down, because the alternative is buying an SDR to find out the receiver was already there, or applying before there is a feed to point at.
